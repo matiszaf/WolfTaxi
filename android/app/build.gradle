@@ -1,9 +1,9 @@
 plugins { id 'com.android.application' }
 android {
-    namespace 'pl.taxicentrala.app'
+    namespace 'pl.wolftaxi.app'
     compileSdk 35
     defaultConfig {
-        applicationId 'pl.taxicentrala.app'
+        applicationId 'pl.wolftaxi.app'
         minSdk 26
         targetSdk 35
         versionCode 1

@@ -1,4 +1,4 @@
-package pl.taxicentrala.app;
+package pl.wolftaxi.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -35,7 +35,7 @@ public class MainActivity extends Activity {
     private void screen(String title){
         ScrollView scroll=new ScrollView(this);root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(28,36,28,28);root.setBackgroundColor(Color.rgb(242,245,243));scroll.setFillViewport(true);scroll.addView(root);setContentView(scroll);
         if(android.os.Build.VERSION.SDK_INT>=30) scroll.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(android.view.WindowInsets.Type.systemBars());v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});
-        text(root,"TAXI CENTRALA",14);text(root,title,28);feedback=text(root,"",14);
+        text(root,"WolfTaxi",14);text(root,title,28);feedback=text(root,"",14);
     }
     private TextView text(LinearLayout parent,String s,int size){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(Color.rgb(23,45,53));t.setPadding(0,12,0,12);parent.addView(t);return t;}
     private EditText input(String hint,boolean password){EditText e=new EditText(this);e.setHint(hint);e.setSingleLine(true);e.setInputType(password?InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD:InputType.TYPE_CLASS_TEXT);root.addView(e);return e;}
