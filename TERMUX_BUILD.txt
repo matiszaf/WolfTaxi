@@ -1,0 +1,6 @@
+WolfTaxi phone-only build
+
+GitHub repo: matiszaf/WolfTaxi
+API: https://hosting.starcore.pl/wolftaxi-api
+
+Workflow .github/workflows/android.yml writes the API URL into android/local.properties on the GitHub runner, builds app-debug.apk and uploads artifact WolfTaxi-APK.

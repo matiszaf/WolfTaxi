@@ -29,14 +29,20 @@ jobs:
       - name: Instalacja SDK 35
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Przygotowanie Gradle
+      - name: Konfiguracja WolfTaxi API
+        run: |
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
+          printf 'wolftaxi.apiUrl=https://hosting.starcore.pl/wolftaxi-api\n' >> android/local.properties
+          cat android/local.properties
+
+      - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.11.1'
 
       - name: Budowanie APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Zapisanie APK
         uses: actions/upload-artifact@v7

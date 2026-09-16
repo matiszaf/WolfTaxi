@@ -1,16 +1,40 @@
-plugins { id 'com.android.application' }
+plugins {
+    id 'com.android.application'
+}
+
+import java.util.Properties
+
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+def apiBaseUrl = localProps.getProperty('wolftaxi.apiUrl', '').trim()
+def escapedApiBaseUrl = apiBaseUrl.replace('\\', '\\\\').replace('"', '\\"')
+
 android {
     namespace 'pl.wolftaxi.app'
     compileSdk 35
+
     defaultConfig {
         applicationId 'pl.wolftaxi.app'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '0.1.0'
+        versionCode 3
+        versionName '0.3.0-oracle'
+        buildConfigField 'String', 'API_BASE_URL', '"' + escapedApiBaseUrl + '"'
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-location:21.4.0'
 }
