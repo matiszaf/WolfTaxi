@@ -57,10 +57,7 @@ sudo rsync -a --delete \
 sudo chown -R wolftaxi:wolftaxi /opt/wolftaxi-api
 sudo chmod 600 /opt/wolftaxi-api/.env
 
-cd /opt/wolftaxi-api
-sudo -u wolftaxi npm install --omit=dev
-sudo -u wolftaxi npm run migrate
-sudo -u wolftaxi npm run seed
+sudo -u wolftaxi /bin/bash -c 'cd /opt/wolftaxi-api && npm install --omit=dev && npm run migrate && npm run seed'
 
 sudo cp /opt/wolftaxi-api/systemd/wolftaxi-api.service /etc/systemd/system/wolftaxi-api.service
 sudo systemctl daemon-reload

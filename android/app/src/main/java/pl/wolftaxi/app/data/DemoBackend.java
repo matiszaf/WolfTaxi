@@ -60,6 +60,9 @@ public final class DemoBackend implements Backend {
     @Override public boolean requiresLogin() { return false; }
     @Override public boolean isSignedIn() { return true; }
     @Override public String currentUserId() { return snapshot.driver.uid; }
+    @Override public String currentDisplayName() { return "Demo"; }
+    @Override public String[] currentRoles() { return new String[]{"driver"}; }
+    @Override public boolean hasRole(String role) { return "driver".equalsIgnoreCase(role); }
     @Override public void setListener(BackendListener listener) { this.listener = listener; }
     @Override public void start() { publish(); }
     @Override public void stop() { handler.removeCallbacksAndMessages(null); }

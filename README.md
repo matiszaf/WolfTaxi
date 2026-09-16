@@ -1,112 +1,84 @@
-# WolfTaxi 0.3 · Oracle Edition
+# WolfTaxi 0.4 — MultiRole / Oracle
 
-WolfTaxi został odłączony od usług chmurowych Firebase. Źródłem prawdy jest teraz własny backend uruchamiany na serwerze Oracle Cloud.
+Jedna aplikacja Android `pl.wolftaxi.app` obsługuje trzy tryby:
 
-## Architektura
+- `driver` — terminal kierowcy,
+- `dispatcher` — mobilna dyspozytornia,
+- `admin` — dyspozytornia + konfiguracja i konta.
+
+Konto może mieć kilka ról. Wtedy po logowaniu aplikacja pokazuje wybór trybu bez ponownego logowania.
+
+Backend działa na Oracle VM: Node.js + Express + PostgreSQL. Firebase nie jest używany.
+
+## Nowe elementy 0.4
+
+- tabela `users` i role wielokrotne,
+- bezpieczna migracja istniejącego `t1@wolftaxi.pl` do roli `driver`,
+- API dyspozytorni: snapshot taxi/zleceń, tworzenie/przypisanie/anulowanie zleceń i komunikaty,
+- API administratora: konta, role, blokowanie kont, reset haseł, taryfy, regiony, strefy,
+- `audit_log`,
+- tryb Dyspozytor i Administrator w tej samej aplikacji Android,
+- responsywny panel WWW z mapą OpenStreetMap/Leaflet pod `/dispatch/`,
+- skrypt `CREATE_USER.sh` do tworzenia kont dispatcher/admin/driver,
+- poprawione skrypty instalacji/aktualizacji (brak błędu `cd /opt/wolftaxi-api: Permission denied`).
+
+## Aktualizacja istniejącego Oracle
+
+Wgraj katalog `server` na serwer, a potem z katalogu przesłanego backendu:
+
+```bash
+chmod +x UPDATE_ORACLE_UBUNTU.sh scripts/*.sh
+./UPDATE_ORACLE_UBUNTU.sh
+curl http://127.0.0.1:8081/health
+```
+
+Po migracji istniejące Taxi 1 nadal loguje się tym samym e-mailem/hasłem.
+
+## Konto centrali
+
+```bash
+sudo -u wolftaxi /opt/wolftaxi-api/scripts/CREATE_USER.sh
+```
+
+Przykład:
 
 ```text
-Android WolfTaxi
-      │ HTTPS + JWT
-      ▼
-Node.js / Express API (Oracle VM)
-      │
-      ▼
-PostgreSQL (ta sama Oracle VM)
+E-mail: centrala@wolftaxi.pl
+Nazwa: Centrala
+Role: dispatcher,admin
+Hasło: ********
 ```
-
-W aplikacji nie ma Firebase Auth, Firestore, Realtime Database, FCM ani Cloud Functions. GPS jest wysyłany bezpośrednio do własnego API, a aktualny stan terminala jest synchronizowany z serwerem co ok. 2,5 s. Podczas aktywnej zmiany foreground service wysyła GPS i potrafi wyświetlić lokalne powiadomienie o nowym zleceniu.
-
-## Co już obsługuje backend
-
-- logowanie kierowców i tokeny JWT,
-- rozpoczęcie i zakończenie zmiany,
-- statusy kierowcy,
-- regiony `R1...` i kolejki,
-- taryfy `T1...`,
-- strefy `S1...`,
-- GPS i wykrywanie polygonów regionów/stref,
-- ofertę zlecenia z timeoutem,
-- przyjmowanie / odrzucanie / wygasanie oferty,
-- przebieg kursu do `completed`,
-- historię kursów,
-- komunikaty centrali,
-- testowe zlecenie w trybie developerskim.
-
-## Dane startowe
-
-`npm run seed` tworzy/aktualizuje:
-
-- `T1` i `T2`,
-- `R1`,
-- `S1`,
-- pierwszy komunikat systemowy.
-
-Konto kierowcy tworzy się osobno skryptem `server/scripts/CREATE_DRIVER.sh`, dzięki czemu hasło nie trafia do repozytorium.
-
-## Android
-
-Publiczny adres API zapisuje się lokalnie, poza Git:
-
-```powershell
-.\SET_API_URL.ps1 -Url "https://TWOJA-DOMENA/wolftaxi-api"
-```
-
-Następnie:
-
-```powershell
-.\BUILD_AND_INSTALL.ps1
-```
-
-Jeżeli `wolftaxi.apiUrl` nie jest ustawiony, aplikacja celowo uruchamia tryb DEMO.
-
-## Serwer Oracle
-
-Skopiuj katalog `server` na VM i uruchom:
-
-```bash
-cd server
-chmod +x INSTALL_ORACLE_UBUNTU.sh scripts/CREATE_DRIVER.sh
-./INSTALL_ORACLE_UBUNTU.sh
-```
-
-Skrypt instaluje PostgreSQL, w razie potrzeby Node.js 20, tworzy bazę, losowe sekrety, uruchamia migracje i usługę systemd. API nasłuchuje wyłącznie na `127.0.0.1:8081`; do Internetu powinno być wystawione przez istniejący Apache + HTTPS.
-
-Potem utwórz Taxi 1:
-
-```bash
-sudo -u wolftaxi /opt/wolftaxi-api/scripts/CREATE_DRIVER.sh
-```
-
-Możesz użyć e-maila `t1@wolftaxi.pl`, `TX1`, numeru `1` i wybranego hasła.
 
 ## Apache
 
-W istniejącym VirtualHost HTTPS wstaw zawartość:
-
-`server/apache/wolftaxi-api.conf.example`
-
-Przykładowy publiczny endpoint po tym ustawieniu:
+API:
 
 ```text
-https://twoja-domena.pl/wolftaxi-api/health
+https://hosting.starcore.pl/wolftaxi-api/
 ```
 
-Powinien zwrócić JSON z `"ok": true`.
+Panel dyspozytorni:
 
-## Aktualizacja backendu
+```text
+https://hosting.starcore.pl/dispatch/
+```
 
-Po kolejnych zmianach kodu serwera:
+Przykład konfiguracji jest w `server/apache/wolftaxi-api.conf.example`.
+
+Po zmianie Apache:
 
 ```bash
-./UPDATE_ORACLE_UBUNTU.sh
+sudo a2enmod proxy proxy_http headers
+sudo apache2ctl configtest
+sudo systemctl reload apache2
 ```
 
-## Bezpieczeństwo
+## APK z telefonu / GitHub Actions
 
-- PostgreSQL nie jest wystawiany do Internetu.
-- API domyślnie słucha tylko na localhost.
-- Hasła są hashowane bcrypt.
-- Sesje używają JWT.
-- Logowanie ma rate limit.
-- Produkcyjnie używaj wyłącznie HTTPS.
-- Po zakończeniu testów ustaw `DEV_SIMULATION=false` w `/opt/wolftaxi-api/.env` i zrestartuj usługę.
+Workflow `.github/workflows/android.yml` buduje APK z API:
+
+```text
+https://hosting.starcore.pl/wolftaxi-api
+```
+
+Po pushu do `main` pobierz artefakt `WolfTaxi-APK` przez `gh run download` w Termuxie.

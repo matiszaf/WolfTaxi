@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.concurrent.ExecutorService;
@@ -42,12 +43,15 @@ public final class OracleBackend implements Backend {
     @Override public boolean requiresLogin() { return true; }
     @Override public boolean isSignedIn() { return session.hasSession(); }
     @Override public String currentUserId() { return session.userId(); }
+    @Override public String currentDisplayName() { return session.displayName(); }
+    @Override public String[] currentRoles() { return session.roles(); }
+    @Override public boolean hasRole(String role) { return session.hasRole(role); }
     @Override public void setListener(BackendListener listener) { this.listener = listener; }
 
     @Override public void start() {
         running = true;
         main.removeCallbacks(poll);
-        if (isSignedIn()) main.post(poll);
+        if (isSignedIn() && hasRole("driver")) main.post(poll);
     }
 
     @Override public void stop() {
@@ -61,11 +65,16 @@ public final class OracleBackend implements Backend {
                 JSONObject body = new JSONObject().put("email", email.trim()).put("password", password);
                 JSONObject json = OracleApi.post("/api/v1/auth/login", "", body);
                 String token = json.optString("token", "");
-                String userId = json.optString("userId", "");
+                JSONObject user = json.optJSONObject("user");
+                String userId = user == null ? "" : user.optString("id", "");
+                String displayName = user == null ? "" : user.optString("name", "");
+                JSONArray rolesJson = user == null ? null : user.optJSONArray("roles");
+                String[] roles = new String[rolesJson == null ? 0 : rolesJson.length()];
+                for (int i = 0; i < roles.length; i++) roles[i] = rolesJson.optString(i, "");
                 if (token.isEmpty()) throw new IllegalStateException("Serwer nie zwrócił tokenu sesji.");
-                session.save(token, userId);
+                session.save(token, userId, displayName, roles);
                 callback.complete(true, json.optString("message", "Zalogowano"));
-                start();
+                if (session.hasRole("driver")) start();
             } catch (Exception error) {
                 callback.complete(false, readable(error));
             }

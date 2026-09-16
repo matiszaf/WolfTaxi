@@ -1,10 +1,15 @@
-# Wstaw te dyrektywy DO ISTNIEJACEGO VirtualHost HTTPS swojej domeny.
-# Wtedy API bedzie dostepne np. jako https://twoja-domena.pl/wolftaxi-api
+# Moduły: sudo a2enmod proxy proxy_http headers
+# Wstaw do vhosta hosting.starcore.pl lub jako conf-available.
 
 ProxyPreserveHost On
+
+# API dla Androida i panelu WWW
 ProxyPass        /wolftaxi-api/ http://127.0.0.1:8081/
 ProxyPassReverse /wolftaxi-api/ http://127.0.0.1:8081/
 
-# Wymagane moduly:
-# sudo a2enmod proxy proxy_http headers
-# sudo systemctl reload apache2
+# Wygodny publiczny adres panelu dyspozytorni:
+# https://hosting.starcore.pl/dispatch/
+ProxyPass        /dispatch/ http://127.0.0.1:8081/dispatch/
+ProxyPassReverse /dispatch/ http://127.0.0.1:8081/dispatch/
+
+RequestHeader set X-Forwarded-Proto "https" env=HTTPS

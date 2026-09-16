@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>WolfTaxi Dispatch</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main id="login" class="login-shell">
+    <section class="login-card">
+      <div class="brand">WOLFTAXI</div>
+      <h1>Dyspozytornia</h1>
+      <p>Jedno konto dla WWW i aplikacji WolfTaxi.</p>
+      <label>E-mail<input id="email" type="email" autocomplete="username" placeholder="centrala@wolftaxi.pl"></label>
+      <label>Hasło<input id="password" type="password" autocomplete="current-password"></label>
+      <button id="loginBtn" class="primary">Zaloguj</button>
+      <div id="loginError" class="error"></div>
+    </section>
+  </main>
+
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div><span class="brand">WOLFTAXI</span><strong> Dispatch</strong></div>
+      <div class="top-actions"><span id="who"></span><button id="refreshBtn">Odśwież</button><button id="logoutBtn">Wyloguj</button></div>
+    </header>
+
+    <nav class="tabs">
+      <button data-tab="dashboard" class="active">Podgląd</button>
+      <button data-tab="orders">Zlecenia</button>
+      <button data-tab="drivers">Taxi</button>
+      <button data-tab="messages">Komunikaty</button>
+      <button data-tab="admin" id="adminTab" class="hidden">Administracja</button>
+    </nav>
+
+    <section id="dashboard" class="tab active">
+      <div class="stats" id="stats"></div>
+      <div class="grid two">
+        <section class="card map-card"><div class="card-title">Mapa taxi</div><div id="map"></div></section>
+        <section class="card"><div class="card-title">Kolejki i status</div><div id="driverMini"></div></section>
+      </div>
+      <section class="card"><div class="card-title">Aktywne zlecenia</div><div id="orderMini"></div></section>
+    </section>
+
+    <section id="orders" class="tab">
+      <div class="grid two">
+        <section class="card">
+          <div class="card-title">Nowe zlecenie</div>
+          <div class="form-grid">
+            <label>Podstawienie<input id="pickup" placeholder="np. Dworcowa 12"></label>
+            <label>Cel<input id="destination" placeholder="np. Portowa 7"></label>
+            <label>Region<select id="orderRegion"></select></label>
+            <label>Taryfa<select id="orderTariff"></select></label>
+            <label>Klient<input id="passengerName"></label>
+            <label>Telefon<input id="passengerPhone"></label>
+            <label>Szacowana kwota<input id="estimatedPrice" type="number" step="0.01" min="0"></label>
+            <label class="check"><input id="cardRequired" type="checkbox"> wymagana karta</label>
+          </div>
+          <label>Uwagi<textarea id="orderNotes"></textarea></label>
+          <button id="createOrderBtn" class="primary">Utwórz i przydziel</button>
+        </section>
+        <section class="card"><div class="card-title">Zlecenia</div><div id="ordersList"></div></section>
+      </div>
+    </section>
+
+    <section id="drivers" class="tab"><section class="card"><div class="card-title">Kierowcy / taxi</div><div id="driversList"></div></section></section>
+
+    <section id="messages" class="tab">
+      <div class="grid two">
+        <section class="card">
+          <div class="card-title">Nowy komunikat</div>
+          <label>Tytuł<input id="messageTitle"></label>
+          <label>Typ<select id="messageType"><option value="info">Informacja</option><option value="warning">Ostrzeżenie</option><option value="urgent">Pilne</option><option value="system">System</option></select></label>
+          <label>Treść<textarea id="messageBody"></textarea></label>
+          <button id="sendMessageBtn" class="primary">Wyślij</button>
+        </section>
+        <section class="card"><div class="card-title">Ostatnie komunikaty</div><div id="messagesList"></div></section>
+      </div>
+    </section>
+
+    <section id="admin" class="tab">
+      <div class="grid two">
+        <section class="card">
+          <div class="card-title">Nowe konto</div>
+          <div class="form-grid">
+            <label>E-mail<input id="newUserEmail" type="email"></label>
+            <label>Nazwa<input id="newUserName"></label>
+            <label>Hasło<input id="newUserPassword" type="password"></label>
+            <div class="roles"><label><input id="roleDriver" type="checkbox"> kierowca</label><label><input id="roleDispatcher" type="checkbox"> dyspozytor</label><label><input id="roleAdmin" type="checkbox"> admin</label></div>
+            <label>ID taxi<input id="newTaxiId" placeholder="TX2"></label>
+            <label>Numer taxi<input id="newTaxiNumber" type="number" min="1"></label>
+          </div>
+          <button id="createUserBtn" class="primary">Utwórz konto</button>
+        </section>
+        <section class="card"><div class="card-title">Konta</div><div id="usersList"></div></section>
+      </div>
+      <div class="grid three">
+        <section class="card"><div class="card-title">Taryfa</div><label>ID<input id="tariffId" placeholder="T3"></label><label>Nazwa<input id="tariffName" placeholder="Taryfa 3"></label><label>Start<input id="tariffStart" type="number" step="0.01"></label><label>zł/km<input id="tariffKm" type="number" step="0.01"></label><button id="saveTariffBtn">Zapisz taryfę</button></section>
+        <section class="card"><div class="card-title">Region</div><label>ID<input id="regionId" placeholder="R2"></label><label>Nazwa<input id="regionName" placeholder="Region 2"></label><label>Priorytet<input id="regionPriority" type="number" value="2"></label><button id="saveRegionBtn">Zapisz region</button></section>
+        <section class="card"><div class="card-title">Strefa</div><label>ID<input id="zoneId" placeholder="S2"></label><label>Nazwa<input id="zoneName" placeholder="Strefa 2"></label><label>Domyślna taryfa<input id="zoneTariff" placeholder="T2"></label><button id="saveZoneBtn">Zapisz strefę</button></section>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="./app.js"></script>
+</body>
+</html>

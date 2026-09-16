@@ -1,11 +1,9 @@
-# Walidacja WolfTaxi Oracle Edition
+# Walidacja WolfTaxi 0.4
 
-W paczce wykonano kontrole statyczne:
+Wykonano lokalnie w środowisku projektu:
 
-- brak zależności i importów Firebase w module Android,
-- `node --check` dla kodu backendu i skryptów,
-- walidacja JSON `package.json`,
-- kontrola kompletności endpointów używanych przez Androida,
-- kontrola manifestu Android po usunięciu usługi FCM.
+- `node --check` dla `src/index.js`, `src/auth.js`, `src/operator.js`, `scripts/create-user.js`, `scripts/create-driver.js` — OK.
+- Kontrola składni Java przez `javac` do etapu brakujących klas Android SDK — brak błędów parsera (`expected`, `illegal start`, `unclosed`, `reached end`).
+- Zweryfikowano, że workflow GitHub Actions ustawia `wolftaxi.apiUrl=https://hosting.starcore.pl/wolftaxi-api`.
 
-Pełny `gradlew installDebug` należy wykonać na komputerze z Android SDK, a migrację PostgreSQL na docelowym serwerze Oracle.
+Pełny build Android powinien zostać wykonany przez dołączony workflow GitHub Actions, ponieważ lokalne środowisko artefaktu nie ma Android SDK.

@@ -1,17 +1,31 @@
-# WolfTaxi 0.3 · migracja na Oracle
+# Zmiany WolfTaxi 0.4.0
 
-- całkowicie usunięto integrację Firebase z aplikacji Android,
-- usunięto Google Services plugin, `google-services.json`, Firebase SDK, Functions i skrypty seedujące Firebase,
-- dodano własny `OracleBackend` korzystający z REST/HTTPS,
-- dodano lokalną sesję JWT,
-- GPS wysyłany jest do własnego API,
-- nowe zlecenie może wyświetlić lokalne powiadomienie podczas aktywnej zmiany,
-- dodano Node.js/Express API,
-- dodano PostgreSQL i migrację schematu,
-- dodano logowanie bcrypt + JWT,
-- dodano serwerową kontrolę zmian, kolejek, taryf i zleceń,
-- dodano automatyczny timeout ofert,
-- dodano seed `T1`, `T2`, `R1`, `S1`,
-- dodano skrypt tworzenia kierowców bez zapisywania hasła w repozytorium,
-- dodano instalator Oracle/Ubuntu, unit systemd i przykład Apache reverse proxy,
-- `BUILD_AND_INSTALL.ps1` zachowuje konfigurację URL API zamiast ją nadpisywać.
+## Architektura
+- Jedna aplikacja Android dla driver / dispatcher / admin.
+- Wspólny login i JWT z tablicą ról.
+- Nowa tabela `users`; `drivers` pozostaje profilem kierowcy.
+- Migracja istniejących kont kierowców bez kasowania danych.
+
+## Kierowca
+- Zachowana logika zmian, statusów, regionów, kolejek, taryf, GPS i kursów.
+
+## Dyspozytor
+- Podgląd wszystkich taxi, statusów, kolejek i GPS.
+- Tworzenie zleceń.
+- Automatyczne oferowanie pierwszemu taxi w kolejce.
+- Ręczne przypisanie taxi.
+- Anulowanie zleceń.
+- Komunikaty centrali.
+
+## Administrator
+- Tworzenie kont z wieloma rolami.
+- Blokowanie/odblokowywanie kont.
+- Endpointy do zmiany ról i resetu haseł.
+- Dodawanie/edycja taryf, regionów i stref.
+- Audit log.
+
+## WWW
+- Panel `/dispatch/`.
+- Responsywny widok desktop/mobile.
+- Mapa taxi z OpenStreetMap/Leaflet.
+- Zlecenia, kierowcy, komunikaty i administracja.

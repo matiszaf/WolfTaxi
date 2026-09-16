@@ -8,6 +8,9 @@ public interface Backend {
     boolean requiresLogin();
     boolean isSignedIn();
     String currentUserId();
+    String currentDisplayName();
+    String[] currentRoles();
+    boolean hasRole(String role);
     void setListener(BackendListener listener);
     void start();
     void stop();
