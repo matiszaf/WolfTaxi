@@ -114,4 +114,45 @@ public final class Ui {
         parent.addView(button, params);
         return button;
     }
+
+    public static Button tabButton(Context context, LinearLayout parent, String label, boolean active, View.OnClickListener listener) {
+        Button button = new Button(context);
+        button.setText(label);
+        button.setTextSize(9);
+        button.setAllCaps(true);
+        button.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        button.setTextColor(active ? Color.rgb(0, 0, 0) : TEXT);
+        button.setOnClickListener(listener);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(active ? GREEN : CARD_ALT);
+        background.setCornerRadius(dp(context, 1));
+        background.setStroke(dp(context, 1), active ? GREEN : LINE);
+        button.setBackground(background);
+        button.setPadding(dp(context, 2), 0, dp(context, 2), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(context, 38), 1f);
+        params.setMargins(dp(context, 1), dp(context, 2), dp(context, 1), dp(context, 4));
+        parent.addView(button, params);
+        return button;
+    }
+
+    public static Button terminalButton(Context context, LinearLayout parent, String label, int accent, boolean darkText, View.OnClickListener listener) {
+        Button button = new Button(context);
+        button.setText(label);
+        button.setTextSize(10);
+        button.setAllCaps(true);
+        button.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        button.setTextColor(darkText ? Color.BLACK : TEXT);
+        button.setOnClickListener(listener);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(accent);
+        background.setCornerRadius(dp(context, 1));
+        background.setStroke(dp(context, 1), LINE);
+        button.setBackground(background);
+        button.setPadding(dp(context, 2), 0, dp(context, 2), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(context, 43), 1f);
+        params.setMargins(dp(context, 1), dp(context, 1), dp(context, 1), dp(context, 1));
+        parent.addView(button, params);
+        return button;
+    }
+
 }

@@ -57,6 +57,7 @@ import pl.wolftaxi.app.ui.Ui;
 
 public final class MainActivity extends Activity implements BackendListener, OperatorListener {
     private enum AppMode { DRIVER, DISPATCHER, ADMIN }
+    private enum DriverTab { REGIONS, ORDER, EXCHANGE, CENTRAL, MENU }
     private static final int REQUEST_LOCATION = 140;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pl", "PL"));
@@ -77,6 +78,8 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private String lastSpokenForcedId = "";
     private String lastSpokenExchangeId = "";
     private final Set<String> spokenMessageIds = new HashSet<>();
+    private DriverTab driverTab = DriverTab.REGIONS;
+    private String regionCodeBuffer = "";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -188,80 +191,368 @@ public final class MainActivity extends Activity implements BackendListener, Ope
 
     // ---------------- DRIVER UI ----------------
     private void renderDriverDashboard() {
-        if(root==null||mode!=AppMode.DRIVER)return; stopCountdown(); root.removeAllViews(); toastLine=null;
+        if(root==null||mode!=AppMode.DRIVER)return;
+        stopCountdown();
+        root.removeAllViews();
+        toastLine=null;
         if(snapshot==null){header("Terminal kierowcy","Łączenie…",Ui.GREEN);return;}
-        renderDriverHeader(); if(!snapshot.connected)renderConnectionWarning(); renderSafetyAlert(); renderDriverState(); renderRegionAndTariff(); renderRegionStats(); renderOrderArea(); renderExchange(); renderMessages(); renderHistory(); renderDriverActions(); toastLine=Ui.text(this,root,"",13,Ui.MUTED,false);
+
+        if(snapshot.offer!=null) driverTab=DriverTab.ORDER;
+        else if(snapshot.activeOrder!=null && driverTab==DriverTab.REGIONS) driverTab=DriverTab.ORDER;
+        else if(pendingQuestion()!=null && snapshot.activeOrder==null && snapshot.offer==null) driverTab=DriverTab.CENTRAL;
+
+        renderDriverHeader();
+        renderDriverTabs();
+        if(!snapshot.connected)renderConnectionWarning();
+        renderDriverStatusStrip();
+
+        if(driverTab==DriverTab.REGIONS) renderDriverRegionsTab();
+        else if(driverTab==DriverTab.ORDER) renderDriverOrderTab();
+        else if(driverTab==DriverTab.EXCHANGE) renderDriverExchangeTab();
+        else if(driverTab==DriverTab.CENTRAL) renderDriverCentralTab();
+        else renderDriverMenuTab();
+
+        toastLine=Ui.text(this,root,"",12,Ui.MUTED,false);
     }
-    private void renderDriverHeader(){LinearLayout h=Ui.row(this);root.addView(h,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));LinearLayout l=Ui.column(this);h.addView(l,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));Ui.text(this,l,"WOLFTAXI",15,Ui.GREEN,true);Ui.text(this,l,"TERMINAL KIEROWCY",20,Ui.TEXT,true);String taxi=snapshot.driver.number>0?"TAXI "+snapshot.driver.number:"KIEROWCA";TextView b=Ui.text(this,h,taxi+" · ORACLE",12,snapshot.connected?Ui.GREEN:Ui.RED,true);b.setGravity(Gravity.END);}
-    private void header(String title,String subtitle,int color){Ui.text(this,root,"WOLFTAXI",15,Ui.GREEN,true);Ui.text(this,root,title,25,Ui.TEXT,true);Ui.text(this,root,subtitle,13,color,false);}
-    private void renderConnectionWarning(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"BRAK POŁĄCZENIA",15,Ui.RED,true);Ui.text(this,card,"Bieżące informacje mogą być nieaktualne.",13,Ui.TEXT,false);}
-    private void renderDriverState(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,snapshot.driver.status.label.toUpperCase(Locale.ROOT),28,statusColor(snapshot.driver.status),true);Ui.text(this,card,(snapshot.driver.onShift?"Zmiana aktywna":"Poza zmianą")+" · "+safe(snapshot.driver.name),14,Ui.MUTED,false);if(!safe(snapshot.driver.vehicleId).isEmpty())Ui.text(this,card,"Samochód: "+snapshot.driver.vehicleId,13,Ui.MUTED,false);}
-    private void renderRegionAndTariff(){LinearLayout row=Ui.row(this);root.addView(row,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));LinearLayout r=compactCard(row);Ui.text(this,r,"REGION",11,Ui.MUTED,true);Ui.text(this,r,snapshot.region==null?"—":snapshot.region.shortName.isEmpty()?snapshot.region.name:snapshot.region.shortName,22,Ui.TEXT,true);Ui.text(this,r,snapshot.queuePosition>0?snapshot.queuePosition+" / "+snapshot.queueSize:"poza kolejką",13,snapshot.queuePosition>0?Ui.BLUE:Ui.MUTED,false);LinearLayout t=compactCard(row);Ui.text(this,t,"TARYFA",11,Ui.MUTED,true);Ui.text(this,t,snapshot.tariff==null?"—":snapshot.tariff.shortName,22,Ui.TEXT,true);Ui.text(this,t,snapshot.tariff==null?"brak danych":money.format(snapshot.tariff.pricePerKm)+"/km",13,Ui.MUTED,false);LinearLayout z=compactCard(row);Ui.text(this,z,"STREFA",11,Ui.MUTED,true);Ui.text(this,z,snapshot.fareZone==null?"—":snapshot.fareZone.name,17,Ui.TEXT,true);Ui.text(this,z,"taryfowa",12,Ui.MUTED,false);}
-    private LinearLayout compactCard(LinearLayout row){LinearLayout card=Ui.column(this);card.setPadding(Ui.dp(this,10),Ui.dp(this,10),Ui.dp(this,10),Ui.dp(this,10));android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();bg.setColor(Ui.CARD);bg.setCornerRadius(Ui.dp(this,2));bg.setStroke(Ui.dp(this,1),Ui.LINE);card.setBackground(bg);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f);p.setMargins(Ui.dp(this,3),0,Ui.dp(this,3),Ui.dp(this,10));row.addView(card,p);return card;}
-    private void renderOrderArea(){if(snapshot.offer!=null){renderOffer(snapshot.offer);return;}if(snapshot.activeOrder!=null){renderActiveOrder(snapshot.activeOrder);return;}LinearLayout card=Ui.card(this,root);Ui.text(this,card,"BRAK AKTYWNEGO ZLECENIA",17,Ui.TEXT,true);Ui.text(this,card,snapshot.driver.status==DriverStatus.IN_QUEUE?"Oczekujesz w kolejce regionu.":"Ustaw status WOLNY lub wejdź do kolejki regionu.",13,Ui.MUTED,false);if(("DEMO".equals(snapshot.backendMode)||(BuildConfig.DEBUG&&"ORACLE".equals(snapshot.backendMode)))&&snapshot.driver.onShift)Ui.button(this,card,"TEST · WYGENERUJ ZLECENIE",Ui.ORANGE,v->action(backend::simulateOffer));}
+
+    private void renderDriverHeader(){
+        LinearLayout h=Ui.row(this);
+        root.addView(h,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout l=Ui.column(this);
+        h.addView(l,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));
+        Ui.text(this,l,"WOLFTAXI",13,Ui.GREEN,true);
+        Ui.text(this,l,"TERMINAL KIEROWCY",18,Ui.TEXT,true);
+        String taxi=snapshot.driver.number>0?"TAXI "+snapshot.driver.number:"KIEROWCA";
+        TextView b=Ui.text(this,h,taxi+" · "+(snapshot.connected?"ONLINE":"OFFLINE"),11,snapshot.connected?Ui.GREEN:Ui.RED,true);
+        b.setGravity(Gravity.END);
+    }
+
+    private void header(String title,String subtitle,int color){
+        Ui.text(this,root,"WOLFTAXI",15,Ui.GREEN,true);
+        Ui.text(this,root,title,25,Ui.TEXT,true);
+        Ui.text(this,root,subtitle,13,color,false);
+    }
+
+    private void renderDriverTabs(){
+        LinearLayout row=Ui.row(this);
+        root.addView(row,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        driverTab(row,"REJONY",DriverTab.REGIONS);
+        driverTab(row,"ZLEC.",DriverTab.ORDER);
+        driverTab(row,"GIEŁDA",DriverTab.EXCHANGE);
+        driverTab(row,"CENTR.",DriverTab.CENTRAL);
+        driverTab(row,"MENU",DriverTab.MENU);
+    }
+
+    private void driverTab(LinearLayout row,String label,DriverTab target){
+        Ui.tabButton(this,row,label,driverTab==target,v->{driverTab=target;renderDriverDashboard();});
+    }
+
+    private void renderConnectionWarning(){
+        LinearLayout card=Ui.card(this,root);
+        Ui.text(this,card,"BRAK POŁĄCZENIA Z CENTRALĄ",13,Ui.RED,true);
+        Ui.text(this,card,"Bieżące informacje mogą być nieaktualne.",11,Ui.TEXT,false);
+    }
+
+    private void renderDriverStatusStrip(){
+        LinearLayout row=Ui.row(this);
+        root.addView(row,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout s=compactCard(row);
+        Ui.text(this,s,"STATUS",9,Ui.MUTED,true);
+        Ui.text(this,s,snapshot.driver.status.label.toUpperCase(Locale.ROOT),15,statusColor(snapshot.driver.status),true);
+        LinearLayout r=compactCard(row);
+        Ui.text(this,r,"REJON",9,Ui.MUTED,true);
+        String region=snapshot.region==null?"—":(snapshot.region.shortName.isEmpty()?snapshot.region.name:snapshot.region.shortName);
+        Ui.text(this,r,region,16,Ui.TEXT,true);
+        Ui.text(this,r,snapshot.queuePosition>0?snapshot.queuePosition+"/"+snapshot.queueSize:"—",10,snapshot.queuePosition>0?Ui.BLUE:Ui.MUTED,false);
+        LinearLayout t=compactCard(row);
+        Ui.text(this,t,"TARYFA",9,Ui.MUTED,true);
+        Ui.text(this,t,snapshot.tariff==null?"—":snapshot.tariff.shortName,16,Ui.TEXT,true);
+        Ui.text(this,t,snapshot.fareZone==null?"—":snapshot.fareZone.id,10,Ui.MUTED,false);
+    }
+
+    private LinearLayout compactCard(LinearLayout row){
+        LinearLayout card=Ui.column(this);
+        card.setPadding(Ui.dp(this,7),Ui.dp(this,6),Ui.dp(this,7),Ui.dp(this,6));
+        android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();
+        bg.setColor(Ui.CARD); bg.setCornerRadius(Ui.dp(this,1)); bg.setStroke(Ui.dp(this,1),Ui.LINE);
+        card.setBackground(bg);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f);
+        p.setMargins(Ui.dp(this,2),0,Ui.dp(this,2),Ui.dp(this,4)); row.addView(card,p); return card;
+    }
+
+    private void renderDriverRegionsTab(){
+        if(!snapshot.driver.onShift){
+            LinearLayout card=Ui.card(this,root);
+            Ui.header(this,card,"TERMINAL NIEAKTYWNY");
+            Ui.text(this,card,"Rozpocznij zmianę, aby zgłaszać rejony i statusy.",12,Ui.MUTED,false);
+            Ui.button(this,card,"ROZPOCZNIJ ZMIANĘ",Ui.GREEN,v->action(cb->backend.startShift((ok,msg)->{cb.complete(ok,msg);if(ok)runOnUiThread(()->ensureLocationService(true));})));
+            renderRegionLegend();
+            return;
+        }
+        renderRegionStats();
+        renderTerminalControlPanel();
+        renderRegionLegend();
+    }
+
+    private void renderTerminalControlPanel(){
+        LinearLayout card=Ui.card(this,root);
+        Ui.header(this,card,"KLAWIATURA / REJONY / STATUS");
+        TextView code=Ui.text(this,card,"KOD REJONU: "+(regionCodeBuffer.isEmpty()?"_":regionCodeBuffer),18,Ui.ORANGE,true);
+        LinearLayout body=Ui.row(this);
+        card.addView(body,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout keypad=Ui.column(this);
+        body.addView(keypad,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1.0f));
+        addKeyRow(keypad,new String[]{"1","2","3"},code);
+        addKeyRow(keypad,new String[]{"4","5","6"},code);
+        addKeyRow(keypad,new String[]{"7","8","9"},code);
+        LinearLayout last=Ui.row(this); keypad.addView(last);
+        Ui.terminalButton(this,last,"C",Color.rgb(90,90,90),false,v->{regionCodeBuffer="";code.setText("KOD REJONU: _");});
+        Ui.terminalButton(this,last,"0",Ui.CARD_ALT,false,v->appendRegionDigit("0",code));
+        Ui.terminalButton(this,last,"OK",Ui.GREEN,true,v->submitRegionCode());
+
+        LinearLayout funcs=Ui.column(this);
+        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1.25f);
+        fp.setMargins(Ui.dp(this,4),0,0,0); body.addView(funcs,fp);
+        addFunctionRow(funcs,"KURSEM",Ui.MAGENTA,v->terminalCourse(),"DOJAZD",Ui.ORANGE,v->terminalDriveToPickup());
+        addFunctionRow(funcs,"WOLNY",Ui.GREEN,v->terminalStatus(DriverStatus.AVAILABLE),"PRZERWA",Ui.BLUE,v->terminalStatus(DriverStatus.BREAK));
+        addFunctionRow(funcs,"ZAJĘTY",Ui.RED,v->terminalStatus(DriverStatus.BUSY),"NA MIEJSCU",Ui.ORANGE,v->terminalArrived());
+        DispatchMessage question=pendingQuestion();
+        LinearLayout yn=Ui.row(this); funcs.addView(yn);
+        Button yes=Ui.terminalButton(this,yn,"TAK",Ui.GREEN,true,v->answerQuestion(true));
+        Button no=Ui.terminalButton(this,yn,"NIE",Ui.RED,true,v->answerQuestion(false));
+        boolean hasQuestion=question!=null; yes.setEnabled(hasQuestion); no.setEnabled(hasQuestion); yes.setAlpha(hasQuestion?1f:.35f); no.setAlpha(hasQuestion?1f:.35f);
+        addFunctionRow(funcs,"TARYFA",Ui.BLUE,v->chooseTariff(),"SOS",Ui.RED,v->terminalSos());
+
+        if(question!=null){
+            Ui.text(this,card,"? "+safe(question.body),12,Ui.ORANGE,true);
+            Ui.text(this,card,"Odpowiedz przyciskami TAK / NIE.",10,Ui.MUTED,false);
+        }
+    }
+
+    private void addKeyRow(LinearLayout keypad,String[] keys,TextView code){
+        LinearLayout row=Ui.row(this); keypad.addView(row);
+        for(String key:keys) Ui.terminalButton(this,row,key,Ui.CARD_ALT,false,v->appendRegionDigit(key,code));
+    }
+
+    private void addFunctionRow(LinearLayout parent,String left,int leftColor,android.view.View.OnClickListener leftClick,String right,int rightColor,android.view.View.OnClickListener rightClick){
+        LinearLayout row=Ui.row(this); parent.addView(row);
+        Ui.terminalButton(this,row,left,leftColor,leftColor!=Ui.CARD_ALT,leftClick);
+        Ui.terminalButton(this,row,right,rightColor,rightColor!=Ui.CARD_ALT,rightClick);
+    }
+
+    private void appendRegionDigit(String digit,TextView code){
+        if(regionCodeBuffer.length()>=4)return;
+        regionCodeBuffer+=digit;
+        code.setText("KOD REJONU: "+regionCodeBuffer);
+    }
+
+    private void submitRegionCode(){
+        if(regionCodeBuffer.isEmpty()){showMessage("Wpisz kod rejonu.",false);return;}
+        Region match=null;
+        for(Region r:snapshot.regions){if(regionNumericCode(r).equals(regionCodeBuffer)){match=r;break;}}
+        if(match==null){showMessage("Nieznany kod rejonu: "+regionCodeBuffer,false);regionCodeBuffer="";renderDriverDashboard();return;}
+        final Region selected=match; regionCodeBuffer="";
+        action(cb->backend.joinQueue(selected.id,cb));
+    }
+
+    private String regionNumericCode(Region r){
+        String source=!safe(r.shortName).isEmpty()?r.shortName:r.id;
+        String digits=source.replaceAll("[^0-9]","");
+        return digits;
+    }
+
+    private void renderRegionLegend(){
+        LinearLayout card=Ui.card(this,root);
+        Ui.header(this,card,"LEGENDA KODÓW NUMERYCZNYCH");
+        if(snapshot.regions.isEmpty()) Ui.text(this,card,"Brak skonfigurowanych rejonów.",11,Ui.MUTED,false);
+        for(Region r:snapshot.regions){
+            String code=regionNumericCode(r); if(code.isEmpty())continue;
+            RegionStat stat=findRegionStat(r.id);
+            String q=stat==null?"":(" · kolejka "+stat.queued);
+            Ui.text(this,card,code+" = "+(r.shortName.isEmpty()?r.id:r.shortName)+" · "+r.name+q,11,Ui.TEXT,false);
+        }
+        Ui.text(this,card,"OK = zgłoś rejon / wejdź do kolejki   C = kasuj kod",10,Ui.GREEN,true);
+        Ui.text(this,card,"KURSEM = z pasażerem   DOJAZD = do klienta   WOLNY = gotowy",10,Ui.MUTED,false);
+        Ui.text(this,card,"PRZERWA = przerwa   ZAJĘTY = niedostępny   TAK/NIE = odpowiedź centrali",10,Ui.MUTED,false);
+    }
+
+    private RegionStat findRegionStat(String regionId){for(RegionStat r:snapshot.regionStats)if(r.id.equals(regionId))return r;return null;}
+
+    private void renderDriverOrderTab(){
+        renderOrderArea();
+        if(snapshot.driver.onShift && snapshot.offer==null && snapshot.activeOrder==null){
+            LinearLayout card=Ui.card(this,root);Ui.text(this,card,"SZYBKIE STATUSY",11,Ui.MUTED,true);
+            LinearLayout row=Ui.row(this);card.addView(row);
+            Ui.rowButton(this,row,"WOLNY",Ui.GREEN,v->terminalStatus(DriverStatus.AVAILABLE));
+            Ui.rowButton(this,row,"DOJAZD",Ui.ORANGE,v->terminalDriveToPickup());
+            Ui.rowButton(this,row,"KURSEM",Ui.MAGENTA,v->terminalCourse());
+        }
+    }
+
+    private void renderOrderArea(){
+        if(snapshot.offer!=null){renderOffer(snapshot.offer);return;}
+        if(snapshot.activeOrder!=null){renderActiveOrder(snapshot.activeOrder);return;}
+        LinearLayout card=Ui.card(this,root);
+        Ui.header(this,card,"ZLECENIE");
+        Ui.text(this,card,"BRAK AKTYWNEGO ZLECENIA",16,Ui.TEXT,true);
+        Ui.text(this,card,snapshot.driver.status==DriverStatus.IN_QUEUE?"Oczekujesz w kolejce rejonu.":"Brak zlecenia z centrali.",11,Ui.MUTED,false);
+        if(("DEMO".equals(snapshot.backendMode)||(BuildConfig.DEBUG&&"ORACLE".equals(snapshot.backendMode)))&&snapshot.driver.onShift)Ui.button(this,card,"TEST · WYGENERUJ ZLECENIE",Ui.ORANGE,v->action(backend::simulateOffer));
+    }
+
     private void renderOffer(Order order){
         LinearLayout card=Ui.card(this,root);
         Ui.header(this,card,"NOWE ZLECENIE / OFERTA");
-        countdown=Ui.text(this,card,"",30,Ui.ORANGE,true);
-        Ui.text(this,card,safe(order.pickupAddress),21,Ui.TEXT,true);
-        if(!safe(order.destinationAddress).isEmpty())Ui.text(this,card,"→ "+order.destinationAddress,16,Ui.TEXT,false);
+        countdown=Ui.text(this,card,"",28,Ui.ORANGE,true);
+        Ui.text(this,card,safe(order.pickupAddress),20,Ui.TEXT,true);
+        if(!safe(order.destinationAddress).isEmpty())Ui.text(this,card,"→ "+order.destinationAddress,15,Ui.TEXT,false);
         String meta=order.passengerCount+" os. · "+order.paymentMethod.label;
         if(order.cardRequired)meta+=" · KARTA"; if(order.luggage)meta+=" · BAGAŻ"; if(order.pet)meta+=" · ZWIERZĘ"; if(order.englishRequired)meta+=" · EN";
-        Ui.text(this,card,meta,12,Ui.MUTED,false);
-        if(order.mineWarning)Ui.text(this,card,"⚠ UWAGA: ZLECENIE OZNACZONE JAKO RYZYKOWNE",12,Ui.MAGENTA,true);
-        if(!safe(order.notes).isEmpty())Ui.text(this,card,order.notes,12,Ui.MUTED,false);
-        if(order.estimatedPrice>0)Ui.text(this,card,"Szacunkowo: "+money.format(order.estimatedPrice),13,Ui.TEXT,true);
+        Ui.text(this,card,meta,11,Ui.MUTED,false);
+        if(order.mineWarning)Ui.text(this,card,"⚠ UWAGA: ZLECENIE OZNACZONE JAKO RYZYKOWNE",11,Ui.MAGENTA,true);
+        if(!safe(order.notes).isEmpty())Ui.text(this,card,order.notes,11,Ui.MUTED,false);
+        if(order.estimatedPrice>0)Ui.text(this,card,"Szacunkowo: "+money.format(order.estimatedPrice),12,Ui.TEXT,true);
         LinearLayout row=Ui.row(this);card.addView(row);
-        Ui.rowButton(this,row,"ODRZUĆ",Ui.RED,v->confirm("Odrzucić zlecenie?",()->action(cb->backend.rejectOrder(order.id,cb))));
-        Ui.rowButton(this,row,"PRZYJMIJ",Ui.GREEN,v->action(cb->backend.acceptOrder(order.id,cb)));
+        Ui.rowButton(this,row,"NIE / ODRZUĆ",Ui.RED,v->confirm("Odrzucić zlecenie?",()->action(cb->backend.rejectOrder(order.id,cb))));
+        Ui.rowButton(this,row,"TAK / PRZYJMIJ",Ui.GREEN,v->action(cb->backend.acceptOrder(order.id,cb)));
         startCountdown(order.id,order.offerExpiresAt);
     }
+
     private void renderActiveOrder(Order order){
         LinearLayout card=Ui.card(this,root);
         Ui.header(this,card,(order.forced?"ZLECENIE Z NAKAZU · ":"ZLECENIE · ")+safe(order.id));
-        if(order.forced)Ui.text(this,card,"NAKAZ CENTRALI",15,Ui.MAGENTA,true);
-        Ui.text(this,card,order.status.label.toUpperCase(Locale.ROOT),22,statusColor(snapshot.driver.status),true);
-        Ui.text(this,card,"PODSTAWIENIE",10,Ui.MUTED,true); Ui.text(this,card,safe(order.pickupAddress),19,Ui.TEXT,true);
-        if(!safe(order.destinationAddress).isEmpty()){Ui.text(this,card,"CEL",10,Ui.MUTED,true);Ui.text(this,card,order.destinationAddress,17,Ui.TEXT,false);}
-        String req=order.passengerCount+" os."+(order.luggage?" · bagaż":"")+(order.pet?" · zwierzę":"")+(order.englishRequired?" · EN":""); Ui.text(this,card,req,12,Ui.MUTED,false);
-        if(order.mineWarning)Ui.text(this,card,"⚠ OZNACZENIE RYZYKA",12,Ui.MAGENTA,true);
-        if(!safe(order.passengerPhone).isEmpty())Ui.text(this,card,"Kontakt: "+order.passengerPhone,12,Ui.MUTED,false);
-        if(!safe(order.notes).isEmpty())Ui.text(this,card,"Uwagi: "+order.notes,12,Ui.MUTED,false);
+        if(order.forced)Ui.text(this,card,"NAKAZ CENTRALI",14,Ui.MAGENTA,true);
+        Ui.text(this,card,order.status.label.toUpperCase(Locale.ROOT),20,statusColor(snapshot.driver.status),true);
+        Ui.text(this,card,"PODSTAWIENIE",9,Ui.MUTED,true); Ui.text(this,card,safe(order.pickupAddress),18,Ui.TEXT,true);
+        if(!safe(order.destinationAddress).isEmpty()){Ui.text(this,card,"CEL",9,Ui.MUTED,true);Ui.text(this,card,order.destinationAddress,16,Ui.TEXT,false);}
+        String req=order.passengerCount+" os."+(order.luggage?" · bagaż":"")+(order.pet?" · zwierzę":"")+(order.englishRequired?" · EN":""); Ui.text(this,card,req,11,Ui.MUTED,false);
+        if(order.mineWarning)Ui.text(this,card,"⚠ OZNACZENIE RYZYKA",11,Ui.MAGENTA,true);
+        if(!safe(order.passengerPhone).isEmpty())Ui.text(this,card,"Kontakt: "+order.passengerPhone,11,Ui.MUTED,false);
+        if(!safe(order.notes).isEmpty())Ui.text(this,card,"Uwagi: "+order.notes,11,Ui.MUTED,false);
         LinearLayout utilities=Ui.row(this);card.addView(utilities);String navAddress=order.status==OrderStatus.IN_PROGRESS&&!safe(order.destinationAddress).isEmpty()?order.destinationAddress:order.pickupAddress;
         Ui.rowButton(this,utilities,"NAWIGACJA",Ui.BLUE,v->openNavigation(navAddress));if(!safe(order.passengerPhone).isEmpty())Ui.rowButton(this,utilities,"ZADZWOŃ",Ui.BLUE,v->openDialer(order.passengerPhone));
         OrderStatus next=nextStatus(order.status);if(next!=null)Ui.button(this,card,nextAction(next),next==OrderStatus.COMPLETED?Ui.RED:Ui.GREEN,v->nextOrderAction(order,next));
     }
+
     private void nextOrderAction(Order order,OrderStatus next){if(next==OrderStatus.COMPLETED)confirm("Zakończyć kurs?",()->action(cb->backend.advanceOrder(order.id,next,cb)));else action(cb->backend.advanceOrder(order.id,next,cb));}
-    private void renderMessages(){
-        LinearLayout card=Ui.card(this,root);Ui.header(this,card,"CENTRALA / KOMUNIKATY");
-        if(snapshot.messages.isEmpty()){Ui.text(this,card,"Brak wiadomości.",12,Ui.MUTED,false);return;}
-        for(int i=0;i<Math.min(snapshot.messages.size(),5);i++){
-            DispatchMessage m=snapshot.messages.get(i);int color="urgent".equals(m.type)?Ui.RED:("warning".equals(m.type)?Ui.ORANGE:Ui.TEXT);String time=m.createdAt>0?clock.format(new Date(m.createdAt))+" · ":"";
-            Ui.text(this,card,time+safe(m.title)+(m.acknowledged?" · POTWIERDZONO":""),11,Ui.MUTED,true);Ui.text(this,card,safe(m.body),13,color,false);
-            if(m.requiresAck&&!m.acknowledged)Ui.button(this,card,"POTWIERDZAM ODCZYT",Ui.GREEN,v->action(cb->backend.acknowledgeMessage(m.id,cb)));
+
+    private void renderDriverExchangeTab(){
+        if(snapshot.exchange.isEmpty()){
+            LinearLayout card=Ui.card(this,root);Ui.header(this,card,"GIEŁDA ZLECEŃ");Ui.text(this,card,"Brak zleceń na giełdzie.",12,Ui.MUTED,false);return;
+        }
+        renderExchange();
+    }
+
+    private void renderExchange(){
+        LinearLayout card=Ui.card(this,root);Ui.header(this,card,"GIEŁDA ZLECEŃ · "+snapshot.exchange.size());
+        for(int i=0;i<Math.min(snapshot.exchange.size(),8);i++){
+            Order o=snapshot.exchange.get(i);LinearLayout block=Ui.column(this);card.addView(block);
+            String when=o.scheduledFor>0?new SimpleDateFormat("HH:mm",Locale.getDefault()).format(new Date(o.scheduledFor)):"TERAZ";
+            Ui.text(this,block,when+" · "+safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress),12,o.mineWarning?Ui.MAGENTA:Ui.TEXT,true);
+            String req=o.passengerCount+" os."+(o.luggage?" · bagaż":"")+(o.pet?" · zwierzę":"")+(o.englishRequired?" · EN":"");Ui.text(this,block,req,10,Ui.MUTED,false);
+            Ui.button(this,block,"POBIERZ Z GIEŁDY",Ui.GREEN,v->confirm("Pobrać "+o.id+"?",()->action(cb->backend.claimExchange(o.id,cb))));
         }
     }
-    private void renderHistory(){if(snapshot.history.isEmpty())return;LinearLayout card=Ui.card(this,root);Ui.text(this,card,"OSTATNIE KURSY",13,Ui.MUTED,true);for(int i=0;i<Math.min(snapshot.history.size(),3);i++){Order o=snapshot.history.get(i);String route=safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress);Ui.text(this,card,route,14,Ui.TEXT,i==0);String meta=o.createdAt>0?clock.format(new Date(o.createdAt)):"";if(o.finalPrice>0)meta+=(meta.isEmpty()?"":" · ")+money.format(o.finalPrice);if(!meta.isEmpty())Ui.text(this,card,meta,12,Ui.MUTED,false);}}
-    private void renderDriverActions(){
-        LinearLayout primary=Ui.row(this);root.addView(primary);
-        if(!snapshot.driver.onShift)Ui.rowButton(this,primary,"ROZPOCZNIJ ZMIANĘ",Ui.GREEN,v->action(cb->backend.startShift((ok,msg)->{cb.complete(ok,msg);if(ok)runOnUiThread(()->ensureLocationService(true));})));
-        else{Ui.rowButton(this,primary,"STATUS",Ui.BLUE,v->chooseStatus());Ui.rowButton(this,primary,"REGION",Ui.BLUE,v->chooseRegion());Ui.rowButton(this,primary,"TARYFA",Ui.BLUE,v->chooseTariff());}
-        if(snapshot.driver.onShift){
-            LinearLayout emergency=Ui.row(this);root.addView(emergency);
-            if(snapshot.safetyAlert==null)Ui.rowButton(this,emergency,"SOS",Ui.RED,v->confirm("Wysłać ALARM SOS do centrali?",()->action(cb->backend.sendSos("SOS kierowcy",cb))));
-            else Ui.rowButton(this,emergency,"ODWOŁAJ SOS",Ui.ORANGE,v->confirm("Odwołać alarm SOS?",()->action(backend::cancelSos)));
-            if(snapshot.queuePosition>0)Ui.rowButton(this,emergency,"OPUŚĆ KOLEJKĘ",Ui.ORANGE,v->action(backend::leaveQueue));
+
+    private void renderDriverCentralTab(){
+        renderPendingQuestion();
+        renderSafetyAlert();
+        renderMessages();
+    }
+
+    private void renderPendingQuestion(){
+        DispatchMessage q=pendingQuestion(); if(q==null)return;
+        LinearLayout card=Ui.card(this,root);Ui.header(this,card,"? PYTANIE OD CENTRALI");
+        Ui.text(this,card,safe(q.title),11,Ui.ORANGE,true);Ui.text(this,card,safe(q.body),17,Ui.TEXT,true);
+        LinearLayout row=Ui.row(this);card.addView(row);
+        Ui.rowButton(this,row,"TAK",Ui.GREEN,v->answerQuestion(true));
+        Ui.rowButton(this,row,"NIE",Ui.RED,v->answerQuestion(false));
+    }
+
+    private DispatchMessage pendingQuestion(){
+        if(snapshot==null)return null;
+        for(DispatchMessage m:snapshot.messages)if("question".equals(m.type)&&!m.answered)return m;
+        return null;
+    }
+
+    private void answerQuestion(boolean yes){
+        DispatchMessage q=pendingQuestion();
+        if(q==null){showMessage("Brak aktywnego pytania z centrali.",false);return;}
+        action(cb->backend.answerMessage(q.id,yes,cb));
+    }
+
+    private void renderMessages(){
+        LinearLayout card=Ui.card(this,root);Ui.header(this,card,"CENTRALA / KOMUNIKATY");
+        if(snapshot.messages.isEmpty()){Ui.text(this,card,"Brak wiadomości.",11,Ui.MUTED,false);return;}
+        for(int i=0;i<Math.min(snapshot.messages.size(),10);i++){
+            DispatchMessage m=snapshot.messages.get(i);int color="urgent".equals(m.type)?Ui.RED:("warning".equals(m.type)?Ui.ORANGE:("question".equals(m.type)?Ui.BLUE:Ui.TEXT));String time=m.createdAt>0?clock.format(new Date(m.createdAt))+" · ":"";
+            String state=m.answered?(" · "+("yes".equals(m.answer)?"TAK":"NIE")):(m.acknowledged?" · POTWIERDZONO":"");
+            Ui.text(this,card,time+safe(m.title)+state,10,Ui.MUTED,true);Ui.text(this,card,safe(m.body),12,color,false);
+            if("question".equals(m.type)&&!m.answered){LinearLayout qrow=Ui.row(this);card.addView(qrow);Ui.rowButton(this,qrow,"TAK",Ui.GREEN,v->action(cb->backend.answerMessage(m.id,true,cb)));Ui.rowButton(this,qrow,"NIE",Ui.RED,v->action(cb->backend.answerMessage(m.id,false,cb)));}
+            else if(m.requiresAck&&!m.acknowledged)Ui.button(this,card,"POTWIERDZAM ODCZYT",Ui.GREEN,v->action(cb->backend.acknowledgeMessage(m.id,cb)));
         }
+    }
+
+    private void renderDriverMenuTab(){
+        LinearLayout info=Ui.card(this,root);Ui.header(this,info,"USTAWIENIA TERMINALA");
+        Ui.text(this,info,"Kierowca: "+safe(snapshot.driver.name),12,Ui.TEXT,true);
+        Ui.text(this,info,"Tryb: "+snapshot.backendMode+" · GPS "+(snapshot.driver.onShift?"aktywny":"poza zmianą"),10,Ui.MUTED,false);
+        LinearLayout row=Ui.row(this);info.addView(row);
+        Ui.rowButton(this,row,"REGION LISTA",Ui.BLUE,v->chooseRegion());
+        Ui.rowButton(this,row,"TARYFA",Ui.BLUE,v->chooseTariff());
+        if(snapshot.queuePosition>0)Ui.button(this,info,"OPUŚĆ KOLEJKĘ",Ui.ORANGE,v->action(backend::leaveQueue));
+        renderHistory();
         if(snapshot.driver.onShift)Ui.button(this,root,"ZAKOŃCZ ZMIANĘ",Color.rgb(130,130,130),v->confirm("Zakończyć zmianę?",()->action(cb->backend.endShift((ok,msg)->{cb.complete(ok,msg);if(ok)runOnUiThread(this::stopLocationService);})))) ;
+        else Ui.button(this,root,"ROZPOCZNIJ ZMIANĘ",Ui.GREEN,v->action(cb->backend.startShift((ok,msg)->{cb.complete(ok,msg);if(ok)runOnUiThread(()->ensureLocationService(true));})));
         renderSessionActions();
     }
 
+    private void renderHistory(){if(snapshot.history.isEmpty())return;LinearLayout card=Ui.card(this,root);Ui.text(this,card,"OSTATNIE KURSY",11,Ui.MUTED,true);for(int i=0;i<Math.min(snapshot.history.size(),5);i++){Order o=snapshot.history.get(i);String route=safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress);Ui.text(this,card,route,12,Ui.TEXT,i==0);String meta=o.createdAt>0?clock.format(new Date(o.createdAt)):"";if(o.finalPrice>0)meta+=(meta.isEmpty()?"":" · ")+money.format(o.finalPrice);if(!meta.isEmpty())Ui.text(this,card,meta,10,Ui.MUTED,false);}}
 
-    private void renderSafetyAlert(){if(snapshot.safetyAlert==null)return;LinearLayout card=Ui.card(this,root);Ui.header(this,card,"!!! ALARM SOS AKTYWNY !!!");Ui.text(this,card,"Status centrali: "+snapshot.safetyAlert.status.toUpperCase(Locale.ROOT),15,Ui.RED,true);if(!safe(snapshot.safetyAlert.note).isEmpty())Ui.text(this,card,snapshot.safetyAlert.note,12,Ui.TEXT,false);}
+    private void renderSafetyAlert(){if(snapshot.safetyAlert==null)return;LinearLayout card=Ui.card(this,root);Ui.header(this,card,"!!! ALARM SOS AKTYWNY !!!");Ui.text(this,card,"Status centrali: "+snapshot.safetyAlert.status.toUpperCase(Locale.ROOT),13,Ui.RED,true);if(!safe(snapshot.safetyAlert.note).isEmpty())Ui.text(this,card,snapshot.safetyAlert.note,11,Ui.TEXT,false);Ui.button(this,card,"ODWOŁAJ SOS",Ui.ORANGE,v->confirm("Odwołać alarm SOS?",()->action(backend::cancelSos)));}
 
-    private void renderRegionStats(){if(snapshot.regionStats.isEmpty())return;LinearLayout card=Ui.card(this,root);Ui.header(this,card,"REJONY / STAN");StringBuilder line=new StringBuilder();for(int i=0;i<Math.min(snapshot.regionStats.size(),8);i++){RegionStat r=snapshot.regionStats.get(i);if(line.length()>0)line.append("   ");line.append(r.shortName.isEmpty()?r.id:r.shortName).append(":").append(r.queued);}Ui.text(this,card,line.toString(),12,Ui.GREEN,true);}
+    private void renderRegionStats(){
+        LinearLayout card=Ui.card(this,root);Ui.header(this,card,"REJONY / STAN");
+        if(snapshot.regionStats.isEmpty()){Ui.text(this,card,"Brak statystyk rejonów.",10,Ui.MUTED,false);return;}
+        StringBuilder line=new StringBuilder();
+        for(int i=0;i<Math.min(snapshot.regionStats.size(),12);i++){RegionStat r=snapshot.regionStats.get(i);if(line.length()>0)line.append("   ");line.append(r.shortName.isEmpty()?r.id:r.shortName).append(":").append(r.queued);}
+        Ui.text(this,card,line.toString(),11,Ui.GREEN,true);
+    }
 
-    private void renderExchange(){if(snapshot.exchange.isEmpty()||snapshot.activeOrder!=null||snapshot.offer!=null)return;LinearLayout card=Ui.card(this,root);Ui.header(this,card,"GIEŁDA ZLECEŃ · "+snapshot.exchange.size());for(int i=0;i<Math.min(snapshot.exchange.size(),5);i++){Order o=snapshot.exchange.get(i);LinearLayout block=Ui.column(this);card.addView(block);String when=o.scheduledFor>0?new SimpleDateFormat("HH:mm",Locale.getDefault()).format(new Date(o.scheduledFor)):"TERAZ";Ui.text(this,block,when+" · "+safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress),13,o.mineWarning?Ui.MAGENTA:Ui.TEXT,true);String req=o.passengerCount+" os."+(o.luggage?" · bagaż":"")+(o.pet?" · zwierzę":"")+(o.englishRequired?" · EN":"");Ui.text(this,block,req,11,Ui.MUTED,false);Ui.button(this,block,"POBIERZ Z GIEŁDY",Ui.GREEN,v->confirm("Pobrać "+o.id+"?",()->action(cb->backend.claimExchange(o.id,cb))));}}
+    private void terminalStatus(DriverStatus status){
+        if(!snapshot.driver.onShift){showMessage("Najpierw rozpocznij zmianę.",false);return;}
+        if(snapshot.activeOrder!=null||snapshot.offer!=null){showMessage("Status sterowany przez aktywne zlecenie.",false);return;}
+        action(cb->backend.setStatus(status,cb));
+    }
+
+    private void terminalCourse(){
+        if(snapshot.activeOrder!=null){
+            if(snapshot.activeOrder.status==OrderStatus.ARRIVED){action(cb->backend.advanceOrder(snapshot.activeOrder.id,OrderStatus.IN_PROGRESS,cb));return;}
+            if(snapshot.activeOrder.status==OrderStatus.IN_PROGRESS){showMessage("Już jesteś KURSEM.",true);return;}
+            showMessage("Najpierw ustaw DOJAZD i NA MIEJSCU.",false);return;
+        }
+        terminalStatus(DriverStatus.COURSE);
+    }
+
+    private void terminalDriveToPickup(){
+        if(snapshot.activeOrder!=null){
+            if(snapshot.activeOrder.status==OrderStatus.ACCEPTED){action(cb->backend.advanceOrder(snapshot.activeOrder.id,OrderStatus.EN_ROUTE,cb));return;}
+            if(snapshot.activeOrder.status==OrderStatus.EN_ROUTE){showMessage("Status DOJAZD jest już aktywny.",true);return;}
+            showMessage("DOJAZD nie pasuje do bieżącego etapu kursu.",false);return;
+        }
+        terminalStatus(DriverStatus.DRIVING_TO_PICKUP);
+    }
+
+    private void terminalArrived(){
+        if(snapshot.activeOrder!=null&&snapshot.activeOrder.status==OrderStatus.EN_ROUTE){action(cb->backend.advanceOrder(snapshot.activeOrder.id,OrderStatus.ARRIVED,cb));return;}
+        showMessage("Brak zlecenia w statusie DOJAZD.",false);
+    }
+
+    private void terminalSos(){
+        if(snapshot.safetyAlert==null)confirm("Wysłać ALARM SOS do centrali?",()->action(cb->backend.sendSos("SOS kierowcy",cb)));
+        else confirm("Odwołać alarm SOS?",()->action(backend::cancelSos));
+    }
+
 
     // ---------------- OPERATOR / ADMIN UI ----------------
     private void renderOperatorDashboard(){

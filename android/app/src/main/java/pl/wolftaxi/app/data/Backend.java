@@ -31,4 +31,5 @@ public interface Backend {
     void sendSos(String note, ActionCallback callback);
     void cancelSos(ActionCallback callback);
     void acknowledgeMessage(String messageId, ActionCallback callback);
+    void answerMessage(String messageId, boolean yes, ActionCallback callback);
 }

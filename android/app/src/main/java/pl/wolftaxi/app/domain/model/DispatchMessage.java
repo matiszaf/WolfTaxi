@@ -11,6 +11,10 @@ public class DispatchMessage {
     public boolean acknowledged = false;
     public String targetType = "all";
     public String targetId = "";
+    public boolean answered = false;
+    public String answer = "";
+    public int yesCount = 0;
+    public int noCount = 0;
 
     public DispatchMessage() {}
     public DispatchMessage(String id, String type, String title, String body, long createdAt, boolean requiresAck) {

@@ -44,3 +44,10 @@ https://wolftaxi.starcore.pl/dispatch/
 https://wolftaxi.starcore.pl/api/v1/...
 wss://wolftaxi.starcore.pl/ws
 ```
+
+### Stały podpis Android APK
+- GitHub Actions buduje teraz podpisany `release` zamiast efemerycznego `debug` APK.
+- Jeden klucz WolfTaxi jest trzymany wyłącznie w GitHub Actions Secrets.
+- Każdy build ma automatycznie rosnący `versionCode` (`500000 + github.run_number`).
+- Workflow weryfikuje SHA-256 certyfikatu przed opublikowaniem APK.
+- Dodano `scripts/SETUP_SIGNING_TERMUX.sh` do jednorazowego utworzenia i podpięcia klucza z telefonu.

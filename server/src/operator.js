@@ -24,7 +24,11 @@ async function getOperatorSnapshot(client, includeUsers = false) {
     client.query(`SELECT id,name,short_name,active,queue_enabled,priority,polygon FROM regions ORDER BY priority,id`),
     client.query(`SELECT id,name,short_name,active,start_fee,price_per_km,waiting_price_per_hour,minimum_fare,sort_order FROM tariffs ORDER BY sort_order,id`),
     client.query(`SELECT id,name,active,multiplier,default_tariff_id,priority,polygon FROM fare_zones ORDER BY priority,id`),
-    client.query(`SELECT id,type,title,body,requires_ack,voice_read,target_type,target_id,active,created_at FROM messages WHERE active=true ORDER BY created_at DESC LIMIT 50`),
+    client.query(`SELECT m.id,m.type,m.title,m.body,m.requires_ack,m.voice_read,m.target_type,m.target_id,m.active,m.created_at,
+      count(r.user_id) FILTER (WHERE r.answer='yes')::int AS yes_count,
+      count(r.user_id) FILTER (WHERE r.answer='no')::int AS no_count
+      FROM messages m LEFT JOIN message_response r ON r.message_id=m.id
+      WHERE m.active=true GROUP BY m.id ORDER BY m.created_at DESC LIMIT 50`),
     includeUsers ? client.query(`SELECT id,email,display_name,roles,enabled,created_at,updated_at FROM users ORDER BY display_name,email`) : Promise.resolve({ rows: [] }),
     client.query(`
       SELECT a.id,a.alert_type,a.status,a.note,a.lat,a.lng,a.created_at,a.acknowledged_at,
@@ -50,7 +54,7 @@ async function getOperatorSnapshot(client, includeUsers = false) {
     regions: regions.rows.map(r => ({ id:text(r.id), name:text(r.name), shortName:text(r.short_name), active:!!r.active, queueEnabled:!!r.queue_enabled, priority:r.priority || 0, polygon:r.polygon || [] })),
     tariffs: tariffs.rows.map(t => ({ id:text(t.id), name:text(t.name), shortName:text(t.short_name), active:!!t.active, startFee:Number(t.start_fee||0), pricePerKm:Number(t.price_per_km||0), waitingPricePerHour:Number(t.waiting_price_per_hour||0), minimumFare:Number(t.minimum_fare||0), sortOrder:t.sort_order || 0 })),
     fareZones: zones.rows.map(z => ({ id:text(z.id), name:text(z.name), active:!!z.active, multiplier:Number(z.multiplier||1), defaultTariffId:text(z.default_tariff_id), priority:z.priority || 0, polygon:z.polygon || [] })),
-    messages: messages.rows.map(m => ({ id:text(m.id), type:text(m.type), title:text(m.title), body:text(m.body), requiresAck:!!m.requires_ack, voiceRead:m.voice_read!==false, targetType:text(m.target_type), targetId:text(m.target_id), active:!!m.active, createdAt:ms(m.created_at) })),
+    messages: messages.rows.map(m => ({ id:text(m.id), type:text(m.type), title:text(m.title), body:text(m.body), requiresAck:!!m.requires_ack, voiceRead:m.voice_read!==false, targetType:text(m.target_type), targetId:text(m.target_id), active:!!m.active, createdAt:ms(m.created_at), yesCount:m.yes_count||0, noCount:m.no_count||0 })),
     users: users.rows.map(u => ({ id:text(u.id), email:text(u.email), name:text(u.display_name), roles:Array.isArray(u.roles)?u.roles:[], enabled:!!u.enabled, createdAt:ms(u.created_at), updatedAt:ms(u.updated_at) })),
     alerts: alerts.rows.map(a => ({ id:text(a.id), type:text(a.alert_type), status:text(a.status), note:text(a.note), lat:a.lat==null?null:Number(a.lat), lng:a.lng==null?null:Number(a.lng), createdAt:ms(a.created_at), acknowledgedAt:ms(a.acknowledged_at), driverId:text(a.driver_id), taxiId:text(a.taxi_id), number:a.number||0, driverName:text(a.name) })),
     generatedAt: Date.now()

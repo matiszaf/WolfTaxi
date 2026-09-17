@@ -208,3 +208,14 @@ CREATE TABLE IF NOT EXISTS driver_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_driver_events_driver ON driver_events(driver_id,created_at DESC);
+
+
+-- WolfTaxi 0.5.1 / RT3000 terminal -------------------------------------------
+CREATE TABLE IF NOT EXISTS message_response (
+  message_id bigint NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  answer text NOT NULL CHECK (answer IN ('yes','no')),
+  responded_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(message_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_message_response_message ON message_response(message_id,responded_at DESC);

@@ -9,8 +9,28 @@ def localPropsFile = rootProject.file('local.properties')
 if (localPropsFile.exists()) {
     localPropsFile.withInputStream { localProps.load(it) }
 }
+
 def apiBaseUrl = localProps.getProperty('wolftaxi.apiUrl', '').trim()
 def escapedApiBaseUrl = apiBaseUrl.replace('\\', '\\\\').replace('"', '\\"')
+
+def versionCodeFromEnv = System.getenv('WOLFTAXI_VERSION_CODE') ?: '5'
+def versionNameFromEnv = System.getenv('WOLFTAXI_VERSION_NAME') ?: '0.5.0-rt3000-core'
+
+def releaseKeystorePath = System.getenv('WOLFTAXI_KEYSTORE_PATH') ?: ''
+def releaseStorePassword = System.getenv('WOLFTAXI_KEYSTORE_PASSWORD') ?: ''
+def releaseKeyAlias = System.getenv('WOLFTAXI_KEY_ALIAS') ?: ''
+def releaseKeyPassword = System.getenv('WOLFTAXI_KEY_PASSWORD') ?: ''
+def releaseSigningReady = !releaseKeystorePath.isEmpty() &&
+        !releaseStorePassword.isEmpty() &&
+        !releaseKeyAlias.isEmpty() &&
+        !releaseKeyPassword.isEmpty()
+def requestedReleaseTask = gradle.startParameter.taskNames.any {
+    it.toLowerCase(Locale.ROOT).contains('release')
+}
+
+if (requestedReleaseTask && !releaseSigningReady) {
+    throw new GradleException('Brak stabilnego podpisu WolfTaxi. Ustaw WOLFTAXI_KEYSTORE_PATH, WOLFTAXI_KEYSTORE_PASSWORD, WOLFTAXI_KEY_ALIAS i WOLFTAXI_KEY_PASSWORD.')
+}
 
 android {
     namespace 'pl.wolftaxi.app'
@@ -20,9 +40,31 @@ android {
         applicationId 'pl.wolftaxi.app'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '0.5.0-rt3000-core'
+        versionCode Integer.parseInt(versionCodeFromEnv)
+        versionName versionNameFromEnv
         buildConfigField 'String', 'API_BASE_URL', '"' + escapedApiBaseUrl + '"'
+    }
+
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
     }
 
     compileOptions {

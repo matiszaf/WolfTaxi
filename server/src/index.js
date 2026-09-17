@@ -105,7 +105,7 @@ app.post('/api/v1/driver/shift/end', ...driverGuard, asyncRoute(async (req, res)
 
 app.post('/api/v1/driver/status', ...driverGuard, asyncRoute(async (req, res) => {
   const status = String(req.body?.status || '');
-  const allowed = new Set(['available', 'break', 'out_of_service']);
+  const allowed = new Set(['available', 'break', 'out_of_service', 'busy', 'course', 'driving_to_pickup']);
   if (!allowed.has(status)) throw statusError(400, 'Niedozwolony status.');
   await tx(async client => {
     const d = (await client.query('SELECT * FROM drivers WHERE id=$1 FOR UPDATE', [req.driverId])).rows[0];
@@ -360,7 +360,7 @@ app.post('/api/v1/dispatch/orders/:id/cancel', ...dispatchGuard, asyncRoute(asyn
 app.post('/api/v1/dispatch/messages', ...dispatchGuard, asyncRoute(async (req, res) => {
   const title = String(req.body?.title || '').trim();
   const body = String(req.body?.body || '').trim();
-  const type = ['info','warning','urgent','system'].includes(String(req.body?.type || 'info')) ? String(req.body?.type || 'info') : 'info';
+  const type = ['info','warning','urgent','system','question'].includes(String(req.body?.type || 'info')) ? String(req.body?.type || 'info') : 'info';
   if (!body) throw statusError(400, 'Wpisz treść wiadomości.');
   const targetType = ['all','driver','region'].includes(String(req.body?.targetType || 'all')) ? String(req.body?.targetType || 'all') : 'all';
   const targetId = String(req.body?.targetId || '').trim();
@@ -424,6 +424,24 @@ app.post('/api/v1/driver/messages/:id/ack', ...driverGuard, asyncRoute(async (re
   await pool.query('INSERT INTO message_ack(message_id,user_id) VALUES($1,$2) ON CONFLICT(message_id,user_id) DO UPDATE SET acknowledged_at=now()',[Number(req.params.id),req.userId]);
   realtime.broadcastOperators('refresh',{reason:'message.ack',messageId:req.params.id});
   ok(res,'Potwierdzono komunikat.');
+}));
+
+
+app.post('/api/v1/driver/messages/:id/answer', ...driverGuard, asyncRoute(async (req,res) => {
+  const messageId=Number(req.params.id);
+  const answer=String(req.body?.answer||'').toLowerCase();
+  if(!['yes','no'].includes(answer)) throw statusError(400,'Odpowiedź musi być TAK lub NIE.');
+  const message=(await pool.query("SELECT * FROM messages WHERE id=$1 AND active=true",[messageId])).rows[0];
+  if(!message) throw statusError(404,'Pytanie nie jest już aktywne.');
+  if(message.type!=='question') throw statusError(409,'Ta wiadomość nie jest pytaniem TAK/NIE.');
+  await tx(async client => {
+    await client.query('INSERT INTO message_response(message_id,user_id,answer) VALUES($1,$2,$3) ON CONFLICT(message_id,user_id) DO UPDATE SET answer=EXCLUDED.answer,responded_at=now()',[messageId,req.userId,answer]);
+    await client.query('INSERT INTO message_ack(message_id,user_id) VALUES($1,$2) ON CONFLICT(message_id,user_id) DO UPDATE SET acknowledged_at=now()',[messageId,req.userId]);
+    await audit(client,req.userId,'driver.message.answer','message',String(messageId),{answer});
+  });
+  realtime.broadcastOperators('refresh',{reason:'message.answer',messageId:String(messageId)});
+  realtime.broadcastDrivers('refresh',{reason:'message.answer',messageId:String(messageId)});
+  ok(res,answer==='yes'?'Odpowiedź: TAK':'Odpowiedź: NIE');
 }));
 
 app.post('/api/v1/dispatch/orders/:id/force', ...dispatchGuard, asyncRoute(async (req,res) => {

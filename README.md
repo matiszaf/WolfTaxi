@@ -88,3 +88,18 @@ Po pushu do `main` pobierz artefakt `WolfTaxi-APK` przez `gh run download` w Ter
 
 ## Uwaga o zgodności z RT3000
 0.5 implementuje rdzeń funkcjonalny, ale nie oznacza jeszcze 100% zgodności RT3000. Kolejne wersje mają domknąć pozostałe funkcje i coraz dokładniej odwzorowywać wygląd oraz workflow ekran po ekranie.
+
+## Stały podpis APK / aktualizacje bez reinstalacji
+
+WolfTaxi używa jednego, prywatnego klucza release przechowywanego w GitHub Actions Secrets. Workflow buduje `assembleRelease`, automatycznie zwiększa `versionCode` i przed publikacją sprawdza SHA-256 certyfikatu APK.
+
+Pierwsza migracja ze starego APK podpisanego tymczasowym kluczem debug może wymagać jednorazowego odinstalowania starej aplikacji. Po zainstalowaniu pierwszego APK z nowym stałym podpisem kolejne wersje instalują się jako zwykłe aktualizacje, bez odinstalowywania danych aplikacji.
+
+Konfiguracja z Termuxa:
+
+```bash
+cd ~/WolfTaxi
+./scripts/SETUP_SIGNING_TERMUX.sh matiszaf/WolfTaxi
+```
+
+Klucza `.jks` ani haseł nigdy nie dodawaj do Git.

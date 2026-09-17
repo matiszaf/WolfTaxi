@@ -33,21 +33,66 @@ jobs:
         run: |
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
           printf 'wolftaxi.apiUrl=https://wolftaxi.starcore.pl\n' >> android/local.properties
-          cat android/local.properties
+
+      - name: Sprawdzenie sekretów podpisu
+        env:
+          KEYSTORE_B64: ${{ secrets.WOLFTAXI_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.WOLFTAXI_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.WOLFTAXI_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.WOLFTAXI_KEY_PASSWORD }}
+          EXPECTED_CERT: ${{ secrets.WOLFTAXI_CERT_SHA256 }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo 'Brak WOLFTAXI_KEYSTORE_B64'; exit 1; }
+          test -n "$STORE_PASSWORD" || { echo 'Brak WOLFTAXI_KEYSTORE_PASSWORD'; exit 1; }
+          test -n "$KEY_ALIAS" || { echo 'Brak WOLFTAXI_KEY_ALIAS'; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo 'Brak WOLFTAXI_KEY_PASSWORD'; exit 1; }
+          test -n "$EXPECTED_CERT" || { echo 'Brak WOLFTAXI_CERT_SHA256'; exit 1; }
+
+      - name: Odtworzenie stałego klucza podpisu
+        env:
+          KEYSTORE_B64: ${{ secrets.WOLFTAXI_KEYSTORE_B64 }}
+        run: |
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/wolftaxi-release.jks"
+          chmod 600 "$RUNNER_TEMP/wolftaxi-release.jks"
+
+      - name: Automatyczna wersja APK
+        run: |
+          echo "WOLFTAXI_VERSION_CODE=$((500000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "WOLFTAXI_VERSION_NAME=0.5.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "WOLFTAXI_KEYSTORE_PATH=$RUNNER_TEMP/wolftaxi-release.jks" >> "$GITHUB_ENV"
 
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Budowanie APK
+      - name: Budowanie podpisanego APK
         working-directory: android
+        env:
+          WOLFTAXI_KEYSTORE_PASSWORD: ${{ secrets.WOLFTAXI_KEYSTORE_PASSWORD }}
+          WOLFTAXI_KEY_ALIAS: ${{ secrets.WOLFTAXI_KEY_ALIAS }}
+          WOLFTAXI_KEY_PASSWORD: ${{ secrets.WOLFTAXI_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Weryfikacja podpisu APK
+        env:
+          EXPECTED_CERT: ${{ secrets.WOLFTAXI_CERT_SHA256 }}
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          apksigner verify --verbose --print-certs "$APK"
+          ACTUAL_CERT=$(apksigner verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          EXPECTED_NORMALIZED=$(printf '%s' "$EXPECTED_CERT" | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          if [ -z "$ACTUAL_CERT" ] || [ "$ACTUAL_CERT" != "$EXPECTED_NORMALIZED" ]; then
+            echo "BŁĄD: APK ma inny certyfikat niż zapisany dla WolfTaxi."
+            exit 1
+          fi
+          echo "Podpis WolfTaxi OK: $ACTUAL_CERT"
+          cp "$APK" android/app/build/outputs/apk/WolfTaxi.apk
 
       - name: Zapisanie APK
         uses: actions/upload-artifact@v7
         with:
           name: WolfTaxi-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/WolfTaxi.apk
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 7

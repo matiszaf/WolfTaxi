@@ -149,6 +149,10 @@ public final class OracleBackend implements Backend {
         action("/api/v1/driver/messages/" + messageId + "/ack", new JSONObject(), callback);
     }
 
+    @Override public void answerMessage(String messageId, boolean yes, ActionCallback callback) {
+        action("/api/v1/driver/messages/" + messageId + "/answer", body("answer", yes ? "yes" : "no"), callback);
+    }
+
     @Override public void simulateOffer(ActionCallback callback) {
         action("/api/v1/dev/simulate-offer", new JSONObject(), callback);
     }

@@ -46,16 +46,19 @@ async function getSnapshot(client, driverId) {
       SELECT * FROM orders
       WHERE status='exchange' AND dispatch_mode='exchange'
         AND (scheduled_for IS NULL OR scheduled_for <= now() + interval '24 hours')
-        AND (pickup_region_id IS NULL OR pickup_region_id='' OR pickup_region_id=$2 OR $2 IS NULL)
+        AND (pickup_region_id IS NULL OR pickup_region_id='' OR pickup_region_id=$1 OR $1 IS NULL)
       ORDER BY mine_warning DESC, scheduled_for NULLS FIRST, created_at ASC
       LIMIT 40
-    `, [driverId, driver.current_region_id]),
+    `, [driver.current_region_id]),
     client.query("SELECT * FROM orders WHERE assigned_driver_id=$1 AND status='completed' ORDER BY completed_at DESC NULLS LAST, updated_at DESC LIMIT 20", [driverId]),
     client.query(`
       SELECT m.id,m.type,m.title,m.body,m.created_at,m.requires_ack,m.voice_read,m.target_type,m.target_id,
-             (a.user_id IS NOT NULL) AS acknowledged
+             (a.user_id IS NOT NULL) AS acknowledged,
+             (mr.user_id IS NOT NULL) AS answered,
+             COALESCE(mr.answer,'') AS answer
       FROM messages m
       LEFT JOIN message_ack a ON a.message_id=m.id AND a.user_id=$2
+      LEFT JOIN message_response mr ON mr.message_id=m.id AND mr.user_id=$2
       WHERE m.active=true AND (
         m.target_type='all' OR
         (m.target_type='driver' AND m.target_id=$1::text) OR
@@ -78,7 +81,7 @@ async function getSnapshot(client, driverId) {
       SELECT r.id,r.short_name,r.name,
              count(q.driver_id)::int AS queued,
              count(*) FILTER (WHERE d.status='available')::int AS available,
-             count(*) FILTER (WHERE d.status IN ('driving_to_pickup','at_pickup','in_ride'))::int AS busy
+             count(*) FILTER (WHERE d.status IN ('driving_to_pickup','at_pickup','in_ride','busy','course'))::int AS busy
       FROM regions r
       LEFT JOIN queue_entries q ON q.region_id=r.id
       LEFT JOIN drivers d ON d.id=q.driver_id
@@ -97,7 +100,7 @@ async function getSnapshot(client, driverId) {
     offer: mapOrder(offer.rows[0]),
     exchange: exchange.rows.map(mapOrder),
     history: history.rows.map(mapOrder),
-    messages: messages.rows.map(m => ({ id:text(m.id), type:text(m.type), title:text(m.title), body:text(m.body), createdAt:ms(m.created_at), requiresAck:!!m.requires_ack, voiceRead:m.voice_read!==false, targetType:text(m.target_type), targetId:text(m.target_id), acknowledged:!!m.acknowledged })),
+    messages: messages.rows.map(m => ({ id:text(m.id), type:text(m.type), title:text(m.title), body:text(m.body), createdAt:ms(m.created_at), requiresAck:!!m.requires_ack, voiceRead:m.voice_read!==false, targetType:text(m.target_type), targetId:text(m.target_id), acknowledged:!!m.acknowledged, answered:!!m.answered, answer:text(m.answer) })),
     queuePosition: queue.rows[0]?.position || 0,
     queueSize: queue.rows[0]?.total || 0,
     queuePriority: queue.rows[0]?.priority_score || 0,

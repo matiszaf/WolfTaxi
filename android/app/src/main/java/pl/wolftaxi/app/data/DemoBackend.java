@@ -54,6 +54,8 @@ public final class DemoBackend implements Backend {
         long now = System.currentTimeMillis();
         snapshot.messages.add(new DispatchMessage("m1", "warning", "Centrala", "Duży ruch w rejonie DWORZEC.", now - 120000, false));
         snapshot.messages.add(new DispatchMessage("m2", "info", "System", "WolfTaxi 2.0 działa w trybie demonstracyjnym.", now - 3600000, false));
+        DispatchMessage question = new DispatchMessage("q1", "question", "PYTANIE CENTRALI", "Czy możesz przyjąć kurs z R1?", now - 30000, true);
+        snapshot.messages.add(0, question);
     }
 
     @Override public String modeLabel() { return "DEMO"; }
@@ -256,6 +258,11 @@ public final class DemoBackend implements Backend {
     @Override public void acknowledgeMessage(String messageId, ActionCallback callback) {
         for (DispatchMessage m : snapshot.messages) if (m.id.equals(messageId)) m.acknowledged = true;
         callback.complete(true, "Potwierdzono komunikat."); publish();
+    }
+
+    @Override public void answerMessage(String messageId, boolean yes, ActionCallback callback) {
+        for (DispatchMessage m : snapshot.messages) if (m.id.equals(messageId)) { m.answered = true; m.answer = yes ? "yes" : "no"; m.acknowledged = true; }
+        callback.complete(true, yes ? "Odpowiedź: TAK" : "Odpowiedź: NIE"); publish();
     }
     @Override public void simulateOffer(ActionCallback callback) {
         if (!snapshot.driver.onShift) {

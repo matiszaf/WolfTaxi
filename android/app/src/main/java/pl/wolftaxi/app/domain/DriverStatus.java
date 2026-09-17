@@ -8,6 +8,8 @@ public enum DriverStatus {
     DRIVING_TO_PICKUP("driving_to_pickup", "Dojazd do klienta"),
     AT_PICKUP("at_pickup", "Na miejscu"),
     IN_RIDE("in_ride", "Kurs"),
+    COURSE("course", "Kursem"),
+    BUSY("busy", "Zajęty"),
     BREAK("break", "Przerwa"),
     OUT_OF_SERVICE("out_of_service", "Niedostępny"),
     BLOCKED("blocked", "Zablokowany"),

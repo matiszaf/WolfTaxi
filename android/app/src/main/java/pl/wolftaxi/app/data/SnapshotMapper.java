@@ -194,6 +194,10 @@ public final class SnapshotMapper {
             value.acknowledged = json.optBoolean("acknowledged", false);
             value.targetType = json.optString("targetType", "all");
             value.targetId = json.optString("targetId", "");
+            value.answered = json.optBoolean("answered", false);
+            value.answer = json.optString("answer", "");
+            value.yesCount = json.optInt("yesCount", 0);
+            value.noCount = json.optInt("noCount", 0);
             out.add(value);
         }
         return out;
