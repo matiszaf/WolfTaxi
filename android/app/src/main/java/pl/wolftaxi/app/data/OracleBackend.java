@@ -107,6 +107,12 @@ public final class OracleBackend implements Backend {
         action("/api/v1/driver/status", body("status", status.wire), callback);
     }
 
+    @Override public void setStatusForRegion(DriverStatus status, String regionId, ActionCallback callback) {
+        JSONObject payload = body("status", status.wire);
+        try { payload.put("regionId", regionId == null ? "" : regionId); } catch (Exception ignored) {}
+        action("/api/v1/driver/status", payload, callback);
+    }
+
     @Override public void joinQueue(String regionId, ActionCallback callback) {
         action("/api/v1/driver/queue/join", body("regionId", regionId), callback);
     }

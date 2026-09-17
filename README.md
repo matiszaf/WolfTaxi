@@ -1,6 +1,6 @@
-# WolfTaxi 0.5 — RT3000 Core / Oracle
+# WolfTaxi 0.5.2 — RT3000 Terminal / Oracle
 
-WolfTaxi 0.5 rozwija wersję MultiRole w stronę pełnego workflow RT3000. Nadal jest to **jedna aplikacja Android** (`pl.wolftaxi.app`) dla kierowcy, dyspozytora i administratora, plus panel WWW dyspozytorni.
+WolfTaxi 0.5.2 rozwija RT3000 Core o terminalowy układ kierowcy: zakładki, klawiaturę rejonów, przyciski funkcyjne i pytania TAK/NIE z centrali. Nadal jest to **jedna aplikacja Android** (`pl.wolftaxi.app`) dla kierowcy, dyspozytora i administratora, plus panel WWW dyspozytorni.
 
 ## Role
 - `driver` — terminal kierowcy,
@@ -9,7 +9,13 @@ WolfTaxi 0.5 rozwija wersję MultiRole w stronę pełnego workflow RT3000. Nadal
 
 Konto może mieć kilka ról i przełączać tryb bez ponownego logowania.
 
-## Najważniejsze elementy 0.5
+## Najważniejsze elementy 0.5.2
+
+- górne zakładki terminala: REJONY / ZLEC. / GIEŁDA / CENTR. / MENU,
+- klawiatura numeryczna 0–9 do kodów rejonów,
+- przyciski KURSEM / DOJAZD / WOLNY / PRZERWA / ZAJĘTY / NA MIEJSCU / TARYFA / SOS,
+- pytania TAK/NIE od centrali z zapisem odpowiedzi,
+- legenda kodów numerycznych rejonów,
 - WebSocket live (`/ws`) zamiast polegania wyłącznie na pollingu,
 - regiony, kolejki, pozycje i priorytety,
 - statystyki regionów,
@@ -52,7 +58,7 @@ curl http://127.0.0.1:8081/health
 Oczekiwany healthcheck zawiera:
 
 ```text
-"version":"0.5.0"
+"version":"0.5.2"
 ```
 
 Migracja zachowuje istniejących użytkowników, Taxi 1, role i hasła.
@@ -103,3 +109,7 @@ cd ~/WolfTaxi
 ```
 
 Klucza `.jks` ani haseł nigdy nie dodawaj do Git.
+
+
+## Region + przycisk ruchu
+Wpisz kod rejonu i naciśnij `KURSEM` albo `DOJAZD`. Kod staje się rejonem docelowym, a nie bieżącym. Przycisk `OK` pozostaje wejściem do kolejki rejonu.

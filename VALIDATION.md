@@ -1,12 +1,10 @@
-# Walidacja WolfTaxi 0.5 RT3000 Core
+# Walidacja WolfTaxi 0.5.2
 
-Sprawdzono w środowisku artefaktu:
-
-- składnię Node.js dla głównych plików backendu (`node --check`),
-- obecność migracji PostgreSQL dla funkcji 0.5,
-- konfigurację WebSocket `/ws`,
-- konfigurację przykładowego vhosta `wolftaxi.starcore.pl` z `proxy_wstunnel`,
-- workflow GitHub Actions z `wolftaxi.apiUrl=https://wolftaxi.starcore.pl`,
-- wersję Android `0.5.0-rt3000-core` / versionCode 5.
-
-Pełny build APK należy wykonać przez dołączony GitHub Actions lub lokalne Android SDK.
+- `node --check` / `npm run check`: OK dla backendu.
+- Migracja SQL jest idempotentna (`ADD COLUMN IF NOT EXISTS target_region_id`).
+- `KOD + KURSEM` wysyła `status=course` + `regionId`.
+- `KOD + DOJAZD` wysyła `status=driving_to_pickup` + `regionId`.
+- `OK` nadal zgłasza rejon / dołącza do kolejki.
+- Rejon docelowy jest osobny od bieżącego (`target_region_id` vs `current_region_id`).
+- Panel kierowcy i dyspozytora pokazują cel jako `→ REJON`.
+- Workflow podpisu zawiera poprawki wykrywania `apksigner` i parsera SHA-256.

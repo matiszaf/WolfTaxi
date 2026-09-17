@@ -12,6 +12,7 @@ public class Driver {
     public boolean manualTariffAllowed = true;
     public DriverStatus status = DriverStatus.OFFLINE;
     public String currentRegionId = "";
+    public String targetRegionId = "";
     public String currentTariffId = "";
     public String currentFareZoneId = "";
     public String activeOrderId = "";

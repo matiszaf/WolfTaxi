@@ -5,7 +5,7 @@ function mapDriver(row) {
   return {
     id: text(row.id), number: row.number || 0, name: text(row.name), vehicleId: text(row.vehicle_id),
     enabled: !!row.enabled, onShift: !!row.on_shift, manualTariffAllowed: !!row.manual_tariff_allowed,
-    status: text(row.status || 'offline'), currentRegionId: text(row.current_region_id),
+    status: text(row.status || 'offline'), currentRegionId: text(row.current_region_id), targetRegionId: text(row.target_region_id),
     currentTariffId: text(row.current_tariff_id), currentFareZoneId: text(row.current_fare_zone_id),
     activeOrderId: text(row.active_order_id), priorityPoints: Number(row.priority_points || 0),
     blockedReason: text(row.blocked_reason), ttsEnabled: row.tts_enabled !== false,

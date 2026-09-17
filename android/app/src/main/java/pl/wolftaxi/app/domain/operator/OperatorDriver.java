@@ -11,6 +11,7 @@ public final class OperatorDriver {
     public boolean online = false;
     public String status = "offline";
     public String currentRegionId = "";
+    public String targetRegionId = "";
     public String detectedRegionId = "";
     public String currentTariffId = "";
     public String currentFareZoneId = "";

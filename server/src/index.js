@@ -33,7 +33,7 @@ const ok = (res, message, extra = {}) => res.json({ ok: true, message, ...extra 
 
 app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.5.0', time: new Date().toISOString() });
+  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.5.2', time: new Date().toISOString() });
 }));
 
 // Panel WWW. Publiczny Apache może mapować /dispatch/ bezpośrednio tutaj.
@@ -86,7 +86,7 @@ app.post('/api/v1/driver/shift/start', ...driverGuard, asyncRoute(async (req, re
     const d = result.rows[0];
     if (!d) throw statusError(404, 'Brak profilu kierowcy.');
     if (!d.enabled) throw statusError(403, 'Konto kierowcy jest zablokowane.');
-    await client.query("UPDATE drivers SET on_shift=true, status='available', online=true, updated_at=now() WHERE id=$1", [req.driverId]);
+    await client.query("UPDATE drivers SET on_shift=true, status='available', target_region_id=NULL, online=true, updated_at=now() WHERE id=$1", [req.driverId]);
     await audit(client, req.userId, 'driver.shift.start', 'driver', req.driverId);
   });
   ok(res, 'Zmiana rozpoczęta');
@@ -97,7 +97,7 @@ app.post('/api/v1/driver/shift/end', ...driverGuard, asyncRoute(async (req, res)
     const active = await client.query("SELECT 1 FROM orders WHERE (assigned_driver_id=$1 AND status IN ('accepted','en_route','arrived','in_progress')) OR (offered_driver_id=$1 AND status='offered') LIMIT 1", [req.driverId]);
     if (active.rows[0]) throw statusError(409, 'Najpierw zakończ lub odrzuć zlecenie.');
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
-    await client.query("UPDATE drivers SET on_shift=false, status='offline', current_region_id=NULL, active_order_id=NULL, online=false, updated_at=now() WHERE id=$1", [req.driverId]);
+    await client.query("UPDATE drivers SET on_shift=false, status='offline', current_region_id=NULL, target_region_id=NULL, active_order_id=NULL, online=false, updated_at=now() WHERE id=$1", [req.driverId]);
     await audit(client, req.userId, 'driver.shift.end', 'driver', req.driverId);
   });
   ok(res, 'Zmiana zakończona');
@@ -105,6 +105,7 @@ app.post('/api/v1/driver/shift/end', ...driverGuard, asyncRoute(async (req, res)
 
 app.post('/api/v1/driver/status', ...driverGuard, asyncRoute(async (req, res) => {
   const status = String(req.body?.status || '');
+  const requestedRegionId = String(req.body?.regionId || '').trim();
   const allowed = new Set(['available', 'break', 'out_of_service', 'busy', 'course', 'driving_to_pickup']);
   if (!allowed.has(status)) throw statusError(400, 'Niedozwolony status.');
   await tx(async client => {
@@ -112,11 +113,19 @@ app.post('/api/v1/driver/status', ...driverGuard, asyncRoute(async (req, res) =>
     if (!d?.on_shift) throw statusError(409, 'Najpierw rozpocznij zmianę.');
     const busy = await client.query("SELECT 1 FROM orders WHERE (assigned_driver_id=$1 AND status IN ('accepted','en_route','arrived','in_progress')) OR (offered_driver_id=$1 AND status='offered') LIMIT 1", [req.driverId]);
     if (busy.rows[0]) throw statusError(409, 'Status jest sterowany przez aktywne zlecenie.');
+
+    let targetRegionId = null;
+    if (requestedRegionId) {
+      const region = (await client.query('SELECT id FROM regions WHERE id=$1 AND active=true', [requestedRegionId])).rows[0];
+      if (!region) throw statusError(400, 'Nieznany lub nieaktywny rejon.');
+      if (status === 'course' || status === 'driving_to_pickup') targetRegionId = requestedRegionId;
+    }
+
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
-    await client.query('UPDATE drivers SET status=$2, updated_at=now() WHERE id=$1', [req.driverId, status]);
-    await audit(client, req.userId, 'driver.status', 'driver', req.driverId, { status });
+    await client.query('UPDATE drivers SET status=$2, target_region_id=$3, updated_at=now() WHERE id=$1', [req.driverId, status, targetRegionId]);
+    await audit(client, req.userId, 'driver.status', 'driver', req.driverId, { status, targetRegionId });
   });
-  ok(res, `Status: ${status}`);
+  ok(res, requestedRegionId && (status === 'course' || status === 'driving_to_pickup') ? `Status: ${status} → ${requestedRegionId}` : `Status: ${status}`);
 }));
 
 app.post('/api/v1/driver/queue/join', ...driverGuard, asyncRoute(async (req, res) => {
@@ -140,7 +149,7 @@ app.post('/api/v1/driver/queue/join', ...driverGuard, asyncRoute(async (req, res
 
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
     await client.query('INSERT INTO queue_entries(region_id,driver_id,joined_at,priority_score) VALUES($1,$2,now(),0)', [regionId, req.driverId]);
-    await client.query("UPDATE drivers SET current_region_id=$2, status='in_queue', updated_at=now() WHERE id=$1", [req.driverId, regionId]);
+    await client.query("UPDATE drivers SET current_region_id=$2, target_region_id=NULL, status='in_queue', updated_at=now() WHERE id=$1", [req.driverId, regionId]);
     await audit(client, req.userId, 'driver.queue.join', 'region', regionId, { driverId:req.driverId });
   });
   ok(res, `Dołączono do kolejki ${regionId}`);
@@ -149,7 +158,7 @@ app.post('/api/v1/driver/queue/join', ...driverGuard, asyncRoute(async (req, res
 app.post('/api/v1/driver/queue/leave', ...driverGuard, asyncRoute(async (req, res) => {
   await tx(async client => {
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
-    await client.query("UPDATE drivers SET status=CASE WHEN on_shift THEN 'available' ELSE 'offline' END, current_region_id=NULL, updated_at=now() WHERE id=$1", [req.driverId]);
+    await client.query("UPDATE drivers SET status=CASE WHEN on_shift THEN 'available' ELSE 'offline' END, current_region_id=NULL, target_region_id=NULL, updated_at=now() WHERE id=$1", [req.driverId]);
     await audit(client, req.userId, 'driver.queue.leave', 'driver', req.driverId);
   });
   ok(res, 'Opuszczono kolejkę');
@@ -201,7 +210,7 @@ app.post('/api/v1/orders/:id/accept', ...driverGuard, asyncRoute(async (req, res
     }
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
     await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),updated_at=now() WHERE id=$1", [order.id, req.driverId]);
-    await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',updated_at=now() WHERE id=$1", [req.driverId, order.id]);
+    await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1", [req.driverId, order.id]);
     await audit(client, req.userId, 'order.accept', 'order', order.id, { driverId:req.driverId });
   });
   ok(res, 'Zlecenie przyjęte');
@@ -246,7 +255,7 @@ app.post('/api/v1/orders/:id/advance', ...driverGuard, asyncRoute(async (req, re
       const finalPrice = Number(req.body?.finalPrice ?? order.final_price ?? order.estimated_price ?? 0);
       const paymentMethod = String(req.body?.paymentMethod || order.payment_method || 'cash');
       await client.query("UPDATE orders SET status='completed',final_price=$2,payment_method=$3,completed_at=now(),updated_at=now() WHERE id=$1", [order.id, finalPrice, paymentMethod]);
-      await client.query("UPDATE drivers SET active_order_id=NULL,status='available',updated_at=now() WHERE id=$1", [req.driverId]);
+      await client.query("UPDATE drivers SET active_order_id=NULL,status='available',target_region_id=NULL,updated_at=now() WHERE id=$1", [req.driverId]);
     } else {
       await client.query(`UPDATE orders SET status=$2, arrived_at=CASE WHEN $2='arrived' THEN now() ELSE arrived_at END, started_at=CASE WHEN $2='in_progress' THEN now() ELSE started_at END, updated_at=now() WHERE id=$1`, [order.id, next]);
       await client.query('UPDATE drivers SET status=$2,updated_at=now() WHERE id=$1', [req.driverId, driverStatus]);
@@ -335,7 +344,7 @@ app.post('/api/v1/dispatch/orders/:id/assign', ...dispatchGuard, asyncRoute(asyn
     if (order.offered_driver_id && String(order.offered_driver_id) !== driverId) await restoreDriver(client, order.offered_driver_id);
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [driverId]);
     await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),updated_at=now() WHERE id=$1", [order.id, driverId]);
-    await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',updated_at=now() WHERE id=$1", [driverId, order.id]);
+    await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1", [driverId, order.id]);
     await audit(client, req.userId, 'dispatch.order.assign', 'order', order.id, { driverId });
   });
   ok(res, 'Zlecenie przypisane.');
@@ -349,7 +358,7 @@ app.post('/api/v1/dispatch/orders/:id/cancel', ...dispatchGuard, asyncRoute(asyn
     if (order.offered_driver_id) await restoreDriver(client, order.offered_driver_id);
     if (order.assigned_driver_id) {
       const q = (await client.query('SELECT 1 FROM queue_entries WHERE driver_id=$1 LIMIT 1', [order.assigned_driver_id])).rows[0];
-      await client.query("UPDATE drivers SET active_order_id=NULL,status=CASE WHEN on_shift THEN $2 ELSE 'offline' END,updated_at=now() WHERE id=$1", [order.assigned_driver_id, q ? 'in_queue' : 'available']);
+      await client.query("UPDATE drivers SET active_order_id=NULL,status=CASE WHEN on_shift THEN $2 ELSE 'offline' END,target_region_id=NULL,updated_at=now() WHERE id=$1", [order.assigned_driver_id, q ? 'in_queue' : 'available']);
     }
     await client.query("UPDATE orders SET status='cancelled',offered_driver_id=NULL,offer_expires_at=NULL,cancelled_reason=$2,updated_at=now() WHERE id=$1", [order.id,String(req.body?.reason || '')]);
     await audit(client, req.userId, 'dispatch.order.cancel', 'order', order.id, { reason:String(req.body?.reason || '') });
@@ -384,7 +393,7 @@ app.post('/api/v1/driver/exchange/:id/claim', ...driverGuard, asyncRoute(async (
     if(!order) throw statusError(409,'Zlecenie nie jest już dostępne na giełdzie.');
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1',[req.driverId]);
     await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,accepted_at=now(),updated_at=now() WHERE id=$1",[order.id,req.driverId]);
-    await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',updated_at=now() WHERE id=$1",[req.driverId,order.id]);
+    await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1",[req.driverId,order.id]);
     await audit(client,req.userId,'exchange.claim','order',order.id,{driverId:req.driverId});
   });
   realtime.broadcastOperators('refresh',{reason:'exchange.claimed',orderId:req.params.id});
@@ -457,7 +466,7 @@ app.post('/api/v1/dispatch/orders/:id/force', ...dispatchGuard, asyncRoute(async
     if(order.offered_driver_id&&String(order.offered_driver_id)!==driverId) await restoreDriver(client,order.offered_driver_id);
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1',[driverId]);
     await client.query("UPDATE orders SET status='accepted',dispatch_mode='mandatory',forced=true,assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),updated_at=now() WHERE id=$1",[order.id,driverId]);
-    await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',updated_at=now() WHERE id=$1",[driverId,order.id]);
+    await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1",[driverId,order.id]);
     await audit(client,req.userId,'dispatch.order.force','order',order.id,{driverId});
   });
   realtime.broadcastOperators('refresh',{reason:'order.forced',orderId:req.params.id}); realtime.broadcastDrivers('refresh',{reason:'order.forced',orderId:req.params.id});

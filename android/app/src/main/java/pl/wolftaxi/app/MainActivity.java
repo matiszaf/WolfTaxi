@@ -263,7 +263,9 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         Ui.text(this,r,"REJON",9,Ui.MUTED,true);
         String region=snapshot.region==null?"—":(snapshot.region.shortName.isEmpty()?snapshot.region.name:snapshot.region.shortName);
         Ui.text(this,r,region,16,Ui.TEXT,true);
-        Ui.text(this,r,snapshot.queuePosition>0?snapshot.queuePosition+"/"+snapshot.queueSize:"—",10,snapshot.queuePosition>0?Ui.BLUE:Ui.MUTED,false);
+        String regionMeta=snapshot.queuePosition>0?snapshot.queuePosition+"/"+snapshot.queueSize:"—";
+        if(!safe(snapshot.driver.targetRegionId).isEmpty()) regionMeta="→ "+regionDisplay(snapshot.driver.targetRegionId);
+        Ui.text(this,r,regionMeta,10,!safe(snapshot.driver.targetRegionId).isEmpty()?Ui.ORANGE:(snapshot.queuePosition>0?Ui.BLUE:Ui.MUTED),false);
         LinearLayout t=compactCard(row);
         Ui.text(this,t,"TARYFA",9,Ui.MUTED,true);
         Ui.text(this,t,snapshot.tariff==null?"—":snapshot.tariff.shortName,16,Ui.TEXT,true);
@@ -373,6 +375,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
             Ui.text(this,card,code+" = "+(r.shortName.isEmpty()?r.id:r.shortName)+" · "+r.name+q,11,Ui.TEXT,false);
         }
         Ui.text(this,card,"OK = zgłoś rejon / wejdź do kolejki   C = kasuj kod",10,Ui.GREEN,true);
+        Ui.text(this,card,"KOD + KURSEM = jadę kursem do rejonu   KOD + DOJAZD = jadę do rejonu",10,Ui.ORANGE,true);
         Ui.text(this,card,"KURSEM = z pasażerem   DOJAZD = do klienta   WOLNY = gotowy",10,Ui.MUTED,false);
         Ui.text(this,card,"PRZERWA = przerwa   ZAJĘTY = niedostępny   TAK/NIE = odpowiedź centrali",10,Ui.MUTED,false);
     }
@@ -525,13 +528,47 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         action(cb->backend.setStatus(status,cb));
     }
 
+    private Region selectedRegionFromBuffer(){
+        if(regionCodeBuffer.isEmpty()) return null;
+        for(Region r:snapshot.regions) if(regionNumericCode(r).equals(regionCodeBuffer)) return r;
+        return null;
+    }
+
+    private void terminalMovingStatus(DriverStatus status){
+        if(!snapshot.driver.onShift){showMessage("Najpierw rozpocznij zmianę.",false);return;}
+        if(snapshot.activeOrder!=null||snapshot.offer!=null){showMessage("Status sterowany przez aktywne zlecenie.",false);return;}
+        if(regionCodeBuffer.isEmpty()){
+            action(cb->backend.setStatus(status,cb));
+            return;
+        }
+        Region selected=selectedRegionFromBuffer();
+        if(selected==null){
+            String bad=regionCodeBuffer;
+            regionCodeBuffer="";
+            showMessage("Nieznany kod rejonu: "+bad,false);
+            renderDriverDashboard();
+            return;
+        }
+        String targetId=selected.id;
+        String targetLabel=selected.shortName.isEmpty()?selected.name:selected.shortName;
+        backend.setStatusForRegion(status,targetId,(ok,msg)->runOnUiThread(()->{
+            if(ok){regionCodeBuffer="";showMessage(status.label+" → "+targetLabel,true);}
+            else showMessage(msg,false);
+        }));
+    }
+
+    private String regionDisplay(String regionId){
+        for(Region r:snapshot.regions) if(r.id.equals(regionId)) return r.shortName.isEmpty()?r.name:r.shortName;
+        return regionId;
+    }
+
     private void terminalCourse(){
         if(snapshot.activeOrder!=null){
             if(snapshot.activeOrder.status==OrderStatus.ARRIVED){action(cb->backend.advanceOrder(snapshot.activeOrder.id,OrderStatus.IN_PROGRESS,cb));return;}
             if(snapshot.activeOrder.status==OrderStatus.IN_PROGRESS){showMessage("Już jesteś KURSEM.",true);return;}
             showMessage("Najpierw ustaw DOJAZD i NA MIEJSCU.",false);return;
         }
-        terminalStatus(DriverStatus.COURSE);
+        terminalMovingStatus(DriverStatus.COURSE);
     }
 
     private void terminalDriveToPickup(){
@@ -540,7 +577,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
             if(snapshot.activeOrder.status==OrderStatus.EN_ROUTE){showMessage("Status DOJAZD jest już aktywny.",true);return;}
             showMessage("DOJAZD nie pasuje do bieżącego etapu kursu.",false);return;
         }
-        terminalStatus(DriverStatus.DRIVING_TO_PICKUP);
+        terminalMovingStatus(DriverStatus.DRIVING_TO_PICKUP);
     }
 
     private void terminalArrived(){
@@ -566,7 +603,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private void renderOperatorStats(){int online=0,queued=0,active=0,waiting=0;for(OperatorDriver d:operatorSnapshot.drivers){if(d.online)online++;if(d.queuePosition>0)queued++;}for(Order o:operatorSnapshot.orders){if(o.status==OrderStatus.OFFERED||o.status.isActive())active++;if(o.status==OrderStatus.SEARCHING_DRIVER||o.status==OrderStatus.NO_DRIVER)waiting++;}LinearLayout row=Ui.row(this);root.addView(row);statCard(row,"ONLINE",String.valueOf(online),Ui.GREEN);statCard(row,"KOLEJKA",String.valueOf(queued),Ui.BLUE);statCard(row,"AKTYWNE",String.valueOf(active),Ui.ORANGE);statCard(row,"OCZEKUJE",String.valueOf(waiting),Ui.RED);}
     private void statCard(LinearLayout row,String label,String value,int color){LinearLayout c=compactCard(row);Ui.text(this,c,label,10,Ui.MUTED,true);Ui.text(this,c,value,25,color,true);}
     private void renderOperatorActions(){LinearLayout row=Ui.row(this);root.addView(row);Ui.rowButton(this,row,"NOWE ZLECENIE",Ui.GREEN,v->newOrderDialog());Ui.rowButton(this,row,"KOMUNIKAT",Ui.BLUE,v->messageDialog());if(mode==AppMode.ADMIN)Ui.rowButton(this,row,"ADMIN",Ui.ORANGE,v->adminMenu());}
-    private void renderOperatorDrivers(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"TAXI",13,Ui.MUTED,true);if(operatorSnapshot.drivers.isEmpty()){Ui.text(this,card,"Brak kierowców.",13,Ui.MUTED,false);return;}for(OperatorDriver d:operatorSnapshot.drivers){LinearLayout row=Ui.row(this);card.addView(row);LinearLayout left=Ui.column(this);row.addView(left,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));Ui.text(this,left,safe(d.taxiId)+" · "+safe(d.name),15,Ui.TEXT,true);String meta=(d.online?"online":"offline")+" · "+d.status+" · "+(d.queueRegionId.isEmpty()?safe(d.currentRegionId):d.queueRegionId)+(d.queuePosition>0?" "+d.queuePosition+"/"+d.queueSize:"");Ui.text(this,left,meta,12,d.online?Ui.GREEN:Ui.MUTED,false);TextView t=Ui.text(this,row,safe(d.currentTariffId),12,Ui.MUTED,true);t.setGravity(Gravity.END);}}
+    private void renderOperatorDrivers(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"TAXI",13,Ui.MUTED,true);if(operatorSnapshot.drivers.isEmpty()){Ui.text(this,card,"Brak kierowców.",13,Ui.MUTED,false);return;}for(OperatorDriver d:operatorSnapshot.drivers){LinearLayout row=Ui.row(this);card.addView(row);LinearLayout left=Ui.column(this);row.addView(left,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));Ui.text(this,left,safe(d.taxiId)+" · "+safe(d.name),15,Ui.TEXT,true);String meta=(d.online?"online":"offline")+" · "+d.status+" · "+(d.queueRegionId.isEmpty()?safe(d.currentRegionId):d.queueRegionId)+(d.queuePosition>0?" "+d.queuePosition+"/"+d.queueSize:"");if(!safe(d.targetRegionId).isEmpty())meta+=" → "+d.targetRegionId;Ui.text(this,left,meta,12,d.online?Ui.GREEN:Ui.MUTED,false);TextView t=Ui.text(this,row,safe(d.currentTariffId),12,Ui.MUTED,true);t.setGravity(Gravity.END);}}
     private void renderOperatorOrders(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"ZLECENIA",13,Ui.MUTED,true);int shown=0;for(Order o:operatorSnapshot.orders){if(shown++>=12)break;LinearLayout block=Ui.column(this);block.setPadding(0,Ui.dp(this,5),0,Ui.dp(this,8));card.addView(block);Ui.text(this,block,o.id+" · "+o.status.label.toUpperCase(Locale.ROOT),13,orderColor(o.status),true);Ui.text(this,block,safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress),15,Ui.TEXT,true);Ui.text(this,block,"Region: "+safe(o.pickupRegionId)+" · "+(o.estimatedPrice>0?money.format(o.estimatedPrice):"bez wyceny"),12,Ui.MUTED,false);if(o.status!=OrderStatus.COMPLETED&&o.status!=OrderStatus.CANCELLED){LinearLayout buttons=Ui.row(this);block.addView(buttons);Ui.rowButton(this,buttons,"PRZYPISZ",Ui.BLUE,v->assignOrderDialog(o));Ui.rowButton(this,buttons,"NAKAZ",Ui.MAGENTA,v->forceOrderDialog(o));Ui.rowButton(this,buttons,"ANULUJ",Ui.RED,v->confirm("Anulować "+o.id+"?",()->operatorAction(cb->operatorBackend.cancelOrder(o.id,cb))));}}if(shown==0)Ui.text(this,card,"Brak zleceń.",13,Ui.MUTED,false);}
     private void renderOperatorMessages(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"KOMUNIKATY",13,Ui.MUTED,true);for(int i=0;i<Math.min(operatorSnapshot.messages.size(),5);i++){DispatchMessage m=operatorSnapshot.messages.get(i);Ui.text(this,card,safe(m.title),12,Ui.MUTED,true);Ui.text(this,card,safe(m.body),14,"urgent".equals(m.type)?Ui.RED:("warning".equals(m.type)?Ui.ORANGE:Ui.TEXT),false);}if(operatorSnapshot.messages.isEmpty())Ui.text(this,card,"Brak komunikatów.",13,Ui.MUTED,false);}
     private void renderAdminSummary(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"ADMINISTRACJA",13,Ui.MUTED,true);Ui.text(this,card,"Konta: "+operatorSnapshot.users.size()+" · Taryfy: "+operatorSnapshot.tariffs.size()+" · Regiony: "+operatorSnapshot.regions.size()+" · Strefy: "+operatorSnapshot.fareZones.size(),14,Ui.TEXT,true);for(int i=0;i<Math.min(operatorSnapshot.users.size(),4);i++){UserAccount u=operatorSnapshot.users.get(i);Ui.text(this,card,(u.enabled?"● ":"○ ")+safe(u.name)+" · "+String.join("/",u.roles),12,u.enabled?Ui.GREEN:Ui.MUTED,false);}}
@@ -585,9 +622,10 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private void forceOrderDialog(Order order){ArrayList<OperatorDriver> drivers=new ArrayList<>();for(OperatorDriver d:operatorSnapshot.drivers)if(d.enabled&&d.onShift)drivers.add(d);if(drivers.isEmpty()){showMessage("Brak kierowców na zmianie.",false);return;}String[] labels=new String[drivers.size()];for(int i=0;i<labels.length;i++){OperatorDriver d=drivers.get(i);labels[i]=d.taxiId+" · "+d.status+" · priorytet "+d.priorityPoints;}new AlertDialog.Builder(this).setTitle("NAKAZ · "+order.id).setItems(labels,(dialog,which)->confirm("Wysłać zlecenie z nakazu do "+drivers.get(which).taxiId+"?",()->operatorAction(cb->operatorBackend.forceOrder(order.id,drivers.get(which).id,cb)))).show();}
     private void messageDialog(){
         LinearLayout box=dialogColumn();EditText title=plainField("Tytuł");EditText body=plainField("Treść");body.setSingleLine(false);body.setMinLines(3);
+        Spinner type=spinner(new String[]{"Informacja","Ostrzeżenie","Pilny","Pytanie TAK/NIE"});
         Spinner target=spinner(new String[]{"Wszyscy","Konkretny kierowca","Region"}); EditText targetId=plainField("ID celu: UUID kierowcy lub R1"); CheckBox ack=new CheckBox(this),voice=new CheckBox(this);ack.setText("Wymagaj potwierdzenia");voice.setText("Czytaj głosowo");voice.setChecked(true);ack.setTextColor(Ui.TEXT);voice.setTextColor(Ui.TEXT);
-        box.addView(title);box.addView(body);box.addView(target);box.addView(targetId);box.addView(ack);box.addView(voice);
-        new AlertDialog.Builder(this).setTitle("Komunikat do kierowców").setView(box).setNegativeButton("Wróć",null).setPositiveButton("WYŚLIJ",(d,w)->{String tt=target.getSelectedItemPosition()==1?"driver":(target.getSelectedItemPosition()==2?"region":"all");operatorAction(cb->operatorBackend.sendMessage(title.getText().toString(),body.getText().toString(),"info",tt,targetId.getText().toString().trim(),ack.isChecked(),voice.isChecked(),cb));}).show();
+        box.addView(title);box.addView(body);box.addView(type);box.addView(target);box.addView(targetId);box.addView(ack);box.addView(voice);
+        new AlertDialog.Builder(this).setTitle("Komunikat do kierowców").setView(box).setNegativeButton("Wróć",null).setPositiveButton("WYŚLIJ",(d,w)->{String tt=target.getSelectedItemPosition()==1?"driver":(target.getSelectedItemPosition()==2?"region":"all");String mt=type.getSelectedItemPosition()==1?"warning":(type.getSelectedItemPosition()==2?"urgent":(type.getSelectedItemPosition()==3?"question":"info"));operatorAction(cb->operatorBackend.sendMessage(title.getText().toString(),body.getText().toString(),mt,tt,targetId.getText().toString().trim(),ack.isChecked(),voice.isChecked(),cb));}).show();
     }
     private void adminMenu(){new AlertDialog.Builder(this).setTitle("Administracja").setItems(new String[]{"Nowe konto","Nowa / zmień taryfę","Nowy / zmień region","Nowa / zmień strefę"},(d,w)->{if(w==0)createUserDialog();else if(w==1)tariffDialog();else if(w==2)regionDialog();else zoneDialog();}).show();}
     private void createUserDialog(){ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);EditText email=field("E-mail",false),name=plainField("Nazwa"),password=field("Hasło",true),taxi=plainField("ID taxi, np. TX2"),number=numberField("Numer taxi");CheckBox driver=new CheckBox(this),dispatcher=new CheckBox(this),admin=new CheckBox(this);driver.setText("Kierowca");dispatcher.setText("Dyspozytor");admin.setText("Administrator");driver.setTextColor(Ui.TEXT);dispatcher.setTextColor(Ui.TEXT);admin.setTextColor(Ui.TEXT);box.addView(email);box.addView(name);box.addView(password);box.addView(driver);box.addView(dispatcher);box.addView(admin);box.addView(taxi);box.addView(number);new AlertDialog.Builder(this).setTitle("Nowe konto").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{int n=0;try{n=Integer.parseInt(number.getText().toString().trim());}catch(Exception ignored){}final int taxiNumber=n;operatorAction(cb->operatorBackend.createUser(email.getText().toString(),name.getText().toString(),password.getText().toString(),driver.isChecked(),dispatcher.isChecked(),admin.isChecked(),taxi.getText().toString(),taxiNumber,cb));}).show();}

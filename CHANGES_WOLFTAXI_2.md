@@ -1,53 +1,50 @@
-# Zmiany WolfTaxi 0.5.0 — RT3000 Core
+# WolfTaxi 0.5.2 — RT3000 REGION + ACTION
 
-## Kierunek wersji
-0.5 traktuje WolfTaxi 0.4 jako bazę techniczną i przebudowuje rdzeń pracy pod workflow RT3000. Jedna aplikacja nadal obsługuje role `driver`, `dispatcher` i `admin`.
+- Kod rejonu jest teraz argumentem dla przycisków ruchu.
+- `2` + `KURSEM` = status KURSEM z celem ustawionym na rejon 2.
+- `2` + `DOJAZD` = status DOJAZD z celem ustawionym na rejon 2.
+- `OK` nadal oznacza zgłoszenie rejonu / wejście do kolejki.
+- Cel rejonu jest osobnym polem `target_region_id`; nie udajemy, że kierowca już znajduje się w rejonie docelowym.
+- Cel jest widoczny w terminalu jako `→ REJON` i w panelu dyspozytora.
+- WOLNY/PRZERWA/ZAJĘTY czyszczą cel przejazdu.
+- Zachowane stałe podpisywanie APK i poprawiona weryfikacja `apksigner`.
 
-## Realtime
-- WebSocket `/ws` z JWT.
-- Natychmiastowe odświeżanie stanu kierowcy, dyspozytorni i administratora po zmianach serwerowych.
-- Automatyczny reconnect po utracie połączenia.
-- Apache vhost dla `wolftaxi.starcore.pl` z proxy WebSocket.
+# WolfTaxi 0.5.1 — RT3000 Terminal
 
-## Kierowca / RT3000 core
-- statusy pracy i kolejki regionowe,
-- statystyki regionów,
-- giełda zleceń i przejęcie zlecenia,
-- zlecenia z nakazu centrali,
-- priorytet kierowcy w kolejce,
-- SOS z lokalizacją kierowcy,
-- komunikaty centrali z potwierdzeniem odczytu,
-- TTS dla ofert, nakazów i komunikatów,
-- dodatkowe wymagania zlecenia: bagaż, zwierzę, EN, oznaczenie ryzyka,
-- pełniejszy przebieg aktywnego kursu.
+Ta wersja rozwija 0.5 RT3000 Core przede wszystkim po stronie terminala kierowcy i workflow centrali.
 
-## Dyspozytor / Administrator
-- live snapshot floty i zleceń,
-- obsługa alarmów SOS,
-- ręczne zlecenie z nakazu dla konkretnego taxi,
-- sterowanie priorytetem kierowcy,
-- rozbudowane komunikaty kierowane do floty / regionu / taxi,
-- zachowane funkcje MultiRole 0.4.
+## Terminal kierowcy
+- dodano stałe zakładki u góry: `REJONY`, `ZLEC.`, `GIEŁDA`, `CENTR.`, `MENU`,
+- dodano terminalową klawiaturę numeryczną `0–9` do zgłaszania rejonu,
+- `OK` zgłasza wybrany kod rejonu / wchodzi do kolejki,
+- `C` kasuje wpisany kod,
+- dodano duże przyciski funkcji: `KURSEM`, `DOJAZD`, `WOLNY`, `PRZERWA`, `ZAJĘTY`, `NA MIEJSCU`, `TARYFA`, `SOS`,
+- dodano aktywne `TAK / NIE` po otrzymaniu pytania od centrali,
+- `TAK / NIE` są nieaktywne, gdy brak oczekującego pytania,
+- dodano legendę kodów numerycznych regionów wraz ze stanem kolejki,
+- dodano gęsty pasek stanu: status kierowcy, rejon/pozycja i taryfa/strefa,
+- zakładka zlecenia pokazuje ofertę i aktywny kurs,
+- zakładka giełdy pokazuje dostępne zlecenia,
+- zakładka centrali pokazuje pytania, komunikaty i SOS,
+- zakładka menu zawiera zmianę, historię, wybór regionu/taryfy i sesję.
 
-## Backend / PostgreSQL
-- wersja API `0.5.0`,
-- rozszerzony schemat kolejki, zleceń, komunikatów i profilu kierowcy,
-- `safety_alerts`, `message_ack`, `driver_events`,
-- migracje są idempotentne i zachowują istniejące konta oraz dane.
+## Statusy terminalowe
+Backend 0.5.1 akceptuje dodatkowe statusy terminala:
+- `course` — KURSEM,
+- `busy` — ZAJĘTY,
+- `driving_to_pickup` — DOJAZD bez aktywnego zlecenia,
+- zachowane: `available`, `break`, `out_of_service`.
 
-## Domena
-Docelowy adres API i panelu:
+Przy aktywnym zleceniu etap kursu ma pierwszeństwo nad ręczną zmianą statusu.
 
-```text
-https://wolftaxi.starcore.pl
-https://wolftaxi.starcore.pl/dispatch/
-https://wolftaxi.starcore.pl/api/v1/...
-wss://wolftaxi.starcore.pl/ws
-```
+## Pytania centrali TAK/NIE
+- dyspozytor może wysłać typ `question`,
+- kierowca odpowiada z głównego terminala lub zakładki `CENTR.`,
+- odpowiedź jest zapisywana w PostgreSQL,
+- panel operatora otrzymuje liczniki odpowiedzi `TAK / NIE`.
 
-### Stały podpis Android APK
-- GitHub Actions buduje teraz podpisany `release` zamiast efemerycznego `debug` APK.
-- Jeden klucz WolfTaxi jest trzymany wyłącznie w GitHub Actions Secrets.
-- Każdy build ma automatycznie rosnący `versionCode` (`500000 + github.run_number`).
-- Workflow weryfikuje SHA-256 certyfikatu przed opublikowaniem APK.
-- Dodano `scripts/SETUP_SIGNING_TERMUX.sh` do jednorazowego utworzenia i podpięcia klucza z telefonu.
+## UI
+Interfejs został zagęszczony w stronę terminalowego workflow RT3000: ciemne tło, zielone nagłówki, monospace, kolorowe stany i funkcje dostępne bez przechodzenia przez rozbudowane menu.
+
+## Podpis APK
+Pozostaje stały podpis release przez GitHub Actions Secrets. Kolejne wersje po pierwszej instalacji podpisanego release APK aktualizują się bez reinstalacji.

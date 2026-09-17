@@ -210,6 +210,9 @@ CREATE TABLE IF NOT EXISTS driver_events (
 CREATE INDEX IF NOT EXISTS idx_driver_events_driver ON driver_events(driver_id,created_at DESC);
 
 
+-- WolfTaxi 0.5.2 / RT3000 region+action --------------------------------------
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS target_region_id text;
+
 -- WolfTaxi 0.5.1 / RT3000 terminal -------------------------------------------
 CREATE TABLE IF NOT EXISTS message_response (
   message_id bigint NOT NULL REFERENCES messages(id) ON DELETE CASCADE,

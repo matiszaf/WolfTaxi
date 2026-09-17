@@ -58,6 +58,7 @@ public final class SnapshotMapper {
         out.manualTariffAllowed = json.optBoolean("manualTariffAllowed", true);
         out.status = DriverStatus.fromWire(json.optString("status", "offline"));
         out.currentRegionId = json.optString("currentRegionId", "");
+        out.targetRegionId = json.optString("targetRegionId", "");
         out.currentTariffId = json.optString("currentTariffId", "");
         out.currentFareZoneId = json.optString("currentFareZoneId", "");
         out.activeOrderId = json.optString("activeOrderId", "");

@@ -75,6 +75,7 @@ public final class DemoBackend implements Backend {
     @Override public void startShift(ActionCallback callback) {
         snapshot.driver.onShift = true;
         snapshot.driver.status = DriverStatus.AVAILABLE;
+        snapshot.driver.targetRegionId = "";
         callback.complete(true, "Zmiana rozpoczęta");
         publish();
     }
@@ -87,6 +88,7 @@ public final class DemoBackend implements Backend {
         snapshot.driver.onShift = false;
         snapshot.driver.status = DriverStatus.OFFLINE;
         snapshot.driver.currentRegionId = "";
+        snapshot.driver.targetRegionId = "";
         snapshot.region = null;
         snapshot.queuePosition = 0;
         snapshot.queueSize = 0;
@@ -95,6 +97,10 @@ public final class DemoBackend implements Backend {
     }
 
     @Override public void setStatus(DriverStatus status, ActionCallback callback) {
+        setStatusForRegion(status, "", callback);
+    }
+
+    @Override public void setStatusForRegion(DriverStatus status, String regionId, ActionCallback callback) {
         if (!snapshot.driver.onShift) {
             callback.complete(false, "Najpierw rozpocznij zmianę.");
             return;
@@ -103,12 +109,18 @@ public final class DemoBackend implements Backend {
             callback.complete(false, "Status jest sterowany przez aktywne zlecenie.");
             return;
         }
+        String target = regionId == null ? "" : regionId.trim();
+        if (!target.isEmpty() && findRegion(target) == null) {
+            callback.complete(false, "Nieznany rejon: " + target);
+            return;
+        }
         snapshot.driver.status = status;
+        snapshot.driver.targetRegionId = (status == DriverStatus.COURSE || status == DriverStatus.DRIVING_TO_PICKUP) ? target : "";
         if (status != DriverStatus.IN_QUEUE) {
             snapshot.queuePosition = 0;
             snapshot.queueSize = 0;
         }
-        callback.complete(true, "Status: " + status.label);
+        callback.complete(true, target.isEmpty() ? ("Status: " + status.label) : (status.label + " → " + target));
         publish();
     }
 
@@ -128,6 +140,7 @@ public final class DemoBackend implements Backend {
         }
         snapshot.region = region;
         snapshot.driver.currentRegionId = region.id;
+        snapshot.driver.targetRegionId = "";
         snapshot.driver.status = DriverStatus.IN_QUEUE;
         snapshot.queuePosition = 3;
         snapshot.queueSize = 8;
@@ -138,6 +151,7 @@ public final class DemoBackend implements Backend {
     @Override public void leaveQueue(ActionCallback callback) {
         snapshot.queuePosition = 0;
         snapshot.queueSize = 0;
+        snapshot.driver.targetRegionId = "";
         if (snapshot.driver.onShift) snapshot.driver.status = DriverStatus.AVAILABLE;
         callback.complete(true, "Opuszczono kolejkę");
         publish();
@@ -169,6 +183,7 @@ public final class DemoBackend implements Backend {
         snapshot.activeOrder = snapshot.offer;
         snapshot.offer = null;
         snapshot.driver.activeOrderId = orderId;
+        snapshot.driver.targetRegionId = "";
         snapshot.driver.status = DriverStatus.DRIVING_TO_PICKUP;
         snapshot.queuePosition = 0;
         snapshot.queueSize = 0;

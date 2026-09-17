@@ -27,7 +27,7 @@ public final class OperatorSnapshotMapper {
             OperatorDriver d=new OperatorDriver();
             d.id=j.optString("id",""); d.taxiId=j.optString("taxiId",""); d.number=j.optInt("number",0); d.name=j.optString("name","");
             d.vehicleId=j.optString("vehicleId",""); d.enabled=j.optBoolean("enabled",true); d.onShift=j.optBoolean("onShift",false); d.online=j.optBoolean("online",false);
-            d.status=j.optString("status","offline"); d.currentRegionId=j.optString("currentRegionId",""); d.detectedRegionId=j.optString("detectedRegionId","");
+            d.status=j.optString("status","offline"); d.currentRegionId=j.optString("currentRegionId",""); d.targetRegionId=j.optString("targetRegionId",""); d.detectedRegionId=j.optString("detectedRegionId","");
             d.currentTariffId=j.optString("currentTariffId",""); d.currentFareZoneId=j.optString("currentFareZoneId",""); d.activeOrderId=j.optString("activeOrderId","");
             d.queueRegionId=j.optString("queueRegionId",""); d.queuePosition=j.optInt("queuePosition",0); d.queueSize=j.optInt("queueSize",0); d.queuePriority=j.optInt("queuePriority",0); d.priorityPoints=j.optInt("priorityPoints",0); d.blockedReason=j.optString("blockedReason","");
             if(!j.isNull("lat")) d.lat=j.optDouble("lat",Double.NaN); if(!j.isNull("lng")) d.lng=j.optDouble("lng",Double.NaN); d.speed=j.optDouble("speed",0); d.lastLocationAt=j.optLong("lastLocationAt",0);

@@ -7,7 +7,7 @@ async function getOperatorSnapshot(client, includeUsers = false) {
   const [drivers, orders, regions, tariffs, zones, messages, users, alerts] = await Promise.all([
     client.query(`
       SELECT d.id,d.user_id,d.taxi_id,d.number,d.name,d.vehicle_id,d.enabled,d.on_shift,d.status,d.online,
-             d.current_region_id,d.detected_region_id,d.current_tariff_id,d.current_fare_zone_id,d.active_order_id,
+             d.current_region_id,d.target_region_id,d.detected_region_id,d.current_tariff_id,d.current_fare_zone_id,d.active_order_id,
              d.last_lat,d.last_lng,d.last_speed,d.last_heading,d.last_accuracy,d.last_location_at,d.priority_points,d.blocked_reason,
              q.region_id AS queue_region_id,q.priority_score,
              CASE WHEN q.driver_id IS NULL THEN 0 ELSE
@@ -42,7 +42,7 @@ async function getOperatorSnapshot(client, includeUsers = false) {
     drivers: drivers.rows.map(d => ({
       id:text(d.id), userId:text(d.user_id), taxiId:text(d.taxi_id), number:d.number || 0, name:text(d.name), vehicleId:text(d.vehicle_id),
       enabled:!!d.enabled, onShift:!!d.on_shift, status:text(d.status), online:!!d.online,
-      currentRegionId:text(d.current_region_id), detectedRegionId:text(d.detected_region_id),
+      currentRegionId:text(d.current_region_id), targetRegionId:text(d.target_region_id), detectedRegionId:text(d.detected_region_id),
       currentTariffId:text(d.current_tariff_id), currentFareZoneId:text(d.current_fare_zone_id), activeOrderId:text(d.active_order_id),
       queueRegionId:text(d.queue_region_id), queuePosition:d.queue_position || 0, queueSize:d.queue_size || 0,
       queuePriority:Number(d.priority_score || 0), priorityPoints:Number(d.priority_points || 0), blockedReason:text(d.blocked_reason),
