@@ -1,84 +1,90 @@
-# WolfTaxi 0.4 — MultiRole / Oracle
+# WolfTaxi 0.5 — RT3000 Core / Oracle
 
-Jedna aplikacja Android `pl.wolftaxi.app` obsługuje trzy tryby:
+WolfTaxi 0.5 rozwija wersję MultiRole w stronę pełnego workflow RT3000. Nadal jest to **jedna aplikacja Android** (`pl.wolftaxi.app`) dla kierowcy, dyspozytora i administratora, plus panel WWW dyspozytorni.
 
+## Role
 - `driver` — terminal kierowcy,
-- `dispatcher` — mobilna dyspozytornia,
-- `admin` — dyspozytornia + konfiguracja i konta.
+- `dispatcher` — dyspozytornia,
+- `admin` — dyspozytornia + administracja.
 
-Konto może mieć kilka ról. Wtedy po logowaniu aplikacja pokazuje wybór trybu bez ponownego logowania.
+Konto może mieć kilka ról i przełączać tryb bez ponownego logowania.
 
-Backend działa na Oracle VM: Node.js + Express + PostgreSQL. Firebase nie jest używany.
+## Najważniejsze elementy 0.5
+- WebSocket live (`/ws`) zamiast polegania wyłącznie na pollingu,
+- regiony, kolejki, pozycje i priorytety,
+- statystyki regionów,
+- giełda zleceń,
+- zlecenia z nakazu,
+- SOS kierowcy,
+- komunikaty centrali z ACK,
+- TTS komunikatów i ofert,
+- rozszerzone wymagania kursu,
+- mobilny tryb kierowcy / dyspozytora / admina w jednej aplikacji,
+- panel WWW pod `/dispatch/`.
 
-## Nowe elementy 0.4
+## Backend
+Oracle VM + Node.js + Express + PostgreSQL. Firebase nie jest używany.
 
-- tabela `users` i role wielokrotne,
-- bezpieczna migracja istniejącego `t1@wolftaxi.pl` do roli `driver`,
-- API dyspozytorni: snapshot taxi/zleceń, tworzenie/przypisanie/anulowanie zleceń i komunikaty,
-- API administratora: konta, role, blokowanie kont, reset haseł, taryfy, regiony, strefy,
-- `audit_log`,
-- tryb Dyspozytor i Administrator w tej samej aplikacji Android,
-- responsywny panel WWW z mapą OpenStreetMap/Leaflet pod `/dispatch/`,
-- skrypt `CREATE_USER.sh` do tworzenia kont dispatcher/admin/driver,
-- poprawione skrypty instalacji/aktualizacji (brak błędu `cd /opt/wolftaxi-api: Permission denied`).
+Docelowa domena:
 
-## Aktualizacja istniejącego Oracle
+```text
+https://wolftaxi.starcore.pl
+```
 
-Wgraj katalog `server` na serwer, a potem z katalogu przesłanego backendu:
+Endpointy:
+
+```text
+https://wolftaxi.starcore.pl/health
+https://wolftaxi.starcore.pl/api/v1/...
+https://wolftaxi.starcore.pl/dispatch/
+wss://wolftaxi.starcore.pl/ws
+```
+
+## Aktualizacja istniejącego Oracle 0.4 → 0.5
+Wyślij katalog `server` na Oracle i uruchom z katalogu przesłanego backendu:
 
 ```bash
-chmod +x UPDATE_ORACLE_UBUNTU.sh scripts/*.sh
+chmod +x UPDATE_ORACLE_UBUNTU.sh scripts/*.sh apache/*.sh
 ./UPDATE_ORACLE_UBUNTU.sh
 curl http://127.0.0.1:8081/health
 ```
 
-Po migracji istniejące Taxi 1 nadal loguje się tym samym e-mailem/hasłem.
+Oczekiwany healthcheck zawiera:
 
-## Konto centrali
+```text
+"version":"0.5.0"
+```
+
+Migracja zachowuje istniejących użytkowników, Taxi 1, role i hasła.
+
+## Apache / WebSocket
+Włącz wymagane moduły:
 
 ```bash
-sudo -u wolftaxi /opt/wolftaxi-api/scripts/CREATE_USER.sh
+sudo a2enmod proxy proxy_http proxy_wstunnel headers rewrite ssl
 ```
 
-Przykład:
+Przykładowy vhost jest w:
 
 ```text
-E-mail: centrala@wolftaxi.pl
-Nazwa: Centrala
-Role: dispatcher,admin
-Hasło: ********
+server/apache/wolftaxi.starcore.pl.conf.example
 ```
 
-## Apache
-
-API:
-
-```text
-https://hosting.starcore.pl/wolftaxi-api/
-```
-
-Panel dyspozytorni:
-
-```text
-https://hosting.starcore.pl/dispatch/
-```
-
-Przykład konfiguracji jest w `server/apache/wolftaxi-api.conf.example`.
-
-Po zmianie Apache:
+Jeśli masz już działający vhost z Certbotem, dodaj do niego przede wszystkim proxy `/api/`, `/dispatch/`, `/health` i `/ws`, a następnie:
 
 ```bash
-sudo a2enmod proxy proxy_http headers
-sudo apache2ctl configtest
+sudo apache2ctl -t
 sudo systemctl reload apache2
 ```
 
-## APK z telefonu / GitHub Actions
-
-Workflow `.github/workflows/android.yml` buduje APK z API:
+## GitHub Actions / APK z telefonu
+Workflow `.github/workflows/android.yml` wpisuje podczas builda:
 
 ```text
-https://hosting.starcore.pl/wolftaxi-api
+wolftaxi.apiUrl=https://wolftaxi.starcore.pl
 ```
 
 Po pushu do `main` pobierz artefakt `WolfTaxi-APK` przez `gh run download` w Termuxie.
+
+## Uwaga o zgodności z RT3000
+0.5 implementuje rdzeń funkcjonalny, ale nie oznacza jeszcze 100% zgodności RT3000. Kolejne wersje mają domknąć pozostałe funkcje i coraz dokładniej odwzorowywać wygląd oraz workflow ekran po ekranie.

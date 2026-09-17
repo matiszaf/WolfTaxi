@@ -11,11 +11,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import pl.wolftaxi.app.domain.operator.OperatorSnapshot;
 
 public final class OperatorBackend {
-    private static final long POLL_MS = 2500;
+    private static final long POLL_MS = 15000;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final AtomicBoolean inFlight = new AtomicBoolean(false);
     private final SessionStore session;
+    private final RealtimeClient realtime = new RealtimeClient();
     private OperatorListener listener;
     private OperatorSnapshot lastSnapshot;
     private boolean running;
@@ -31,18 +32,36 @@ public final class OperatorBackend {
 
     public OperatorBackend(Context context) { session = new SessionStore(context); }
     public void setListener(OperatorListener listener) { this.listener = listener; }
-    public void start(boolean adminMode) { this.adminMode = adminMode; running = true; main.removeCallbacks(poll); main.post(poll); }
-    public void stop() { running = false; main.removeCallbacks(poll); }
+    public void start(boolean adminMode) {
+        this.adminMode = adminMode; running = true; main.removeCallbacks(poll);
+        refresh();
+        realtime.start(session.token(), (type,data) -> {
+            if ("refresh".equals(type) || "hello".equals(type) || "sos".equals(type)) refresh();
+        });
+        main.postDelayed(poll, POLL_MS);
+    }
+    public void stop() { running = false; main.removeCallbacks(poll); realtime.stop(); }
 
     public void createOrder(String pickup, String destination, String regionId, String tariffId, ActionCallback cb) {
+        createOrderAdvanced(pickup,destination,regionId,tariffId,"queue",1,false,false,false,false,0,cb);
+    }
+    public void createOrderAdvanced(String pickup,String destination,String regionId,String tariffId,String dispatchMode,int passengers,boolean luggage,boolean pet,boolean englishRequired,boolean mineWarning,long scheduledFor,ActionCallback cb) {
         JSONObject body = new JSONObject();
         put(body,"pickupAddress",pickup); put(body,"destinationAddress",destination); put(body,"pickupRegionId",regionId); put(body,"tariffId",tariffId);
+        put(body,"dispatchMode",dispatchMode); put(body,"passengerCount",passengers); put(body,"luggage",luggage); put(body,"pet",pet); put(body,"englishRequired",englishRequired); put(body,"mineWarning",mineWarning); if(scheduledFor>0)put(body,"scheduledFor",new java.util.Date(scheduledFor).toInstant().toString());
         action("/api/v1/dispatch/orders", body, cb);
     }
     public void assignOrder(String orderId, String driverId, ActionCallback cb) { action("/api/v1/dispatch/orders/"+orderId+"/assign", body("driverId",driverId), cb); }
     public void cancelOrder(String orderId, ActionCallback cb) { action("/api/v1/dispatch/orders/"+orderId+"/cancel", new JSONObject(), cb); }
+    public void forceOrder(String orderId, String driverId, ActionCallback cb) { action("/api/v1/dispatch/orders/"+orderId+"/force", body("driverId",driverId), cb); }
+    public void setDriverPriority(String driverId, int priority, ActionCallback cb) { JSONObject body=new JSONObject();put(body,"priority",priority);action("/api/v1/dispatch/drivers/"+driverId+"/priority",body,cb); }
+    public void acknowledgeAlert(String alertId, ActionCallback cb) { action("/api/v1/dispatch/alerts/"+alertId+"/ack",new JSONObject(),cb); }
+    public void closeAlert(String alertId, ActionCallback cb) { action("/api/v1/dispatch/alerts/"+alertId+"/close",new JSONObject(),cb); }
     public void sendMessage(String title, String bodyText, String type, ActionCallback cb) {
-        JSONObject body=new JSONObject();put(body,"title",title);put(body,"body",bodyText);put(body,"type",type);action("/api/v1/dispatch/messages",body,cb);
+        sendMessage(title,bodyText,type,"all","",false,true,cb);
+    }
+    public void sendMessage(String title,String bodyText,String type,String targetType,String targetId,boolean requiresAck,boolean voiceRead,ActionCallback cb) {
+        JSONObject body=new JSONObject();put(body,"title",title);put(body,"body",bodyText);put(body,"type",type);put(body,"targetType",targetType);put(body,"targetId",targetId);put(body,"requiresAck",requiresAck);put(body,"voiceRead",voiceRead);action("/api/v1/dispatch/messages",body,cb);
     }
     public void createUser(String email,String name,String password,boolean driver,boolean dispatcher,boolean admin,String taxiId,int number,ActionCallback cb){
         JSONObject body=new JSONObject();put(body,"email",email);put(body,"name",name);put(body,"password",password);put(body,"taxiId",taxiId);put(body,"number",number);

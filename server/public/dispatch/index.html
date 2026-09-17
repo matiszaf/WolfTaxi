@@ -3,106 +3,116 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>WolfTaxi Dispatch</title>
+  <title>WolfTaxi — Dyspozytor</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main id="login" class="login-shell">
-    <section class="login-card">
-      <div class="brand">WOLFTAXI</div>
+    <section class="login-card terminal-panel">
+      <div class="window-title">WolfTaxi — RT3000 CORE</div>
       <h1>Dyspozytornia</h1>
-      <p>Jedno konto dla WWW i aplikacji WolfTaxi.</p>
-      <label>E-mail<input id="email" type="email" autocomplete="username" placeholder="centrala@wolftaxi.pl"></label>
+      <label>Użytkownik<input id="email" type="email" autocomplete="username" placeholder="centrala@wolftaxi.pl"></label>
       <label>Hasło<input id="password" type="password" autocomplete="current-password"></label>
-      <button id="loginBtn" class="primary">Zaloguj</button>
+      <button id="loginBtn" class="primary">ZALOGUJ</button>
       <div id="loginError" class="error"></div>
     </section>
   </main>
 
-  <div id="app" class="hidden">
-    <header class="topbar">
-      <div><span class="brand">WOLFTAXI</span><strong> Dispatch</strong></div>
-      <div class="top-actions"><span id="who"></span><button id="refreshBtn">Odśwież</button><button id="logoutBtn">Wyloguj</button></div>
+  <div id="app" class="hidden app-shell">
+    <header class="rt-titlebar">
+      <div><b>WOLFTAXI</b> — Dyspozytor <span class="version">v0.5 RT3000-core</span></div>
+      <div><span id="liveState" class="live-dot offline">WS</span> <span id="who"></span> <button id="refreshBtn">ODŚWIEŻ</button><button id="logoutBtn">WYLOGUJ</button></div>
     </header>
 
-    <nav class="tabs">
-      <button data-tab="dashboard" class="active">Podgląd</button>
-      <button data-tab="orders">Zlecenia</button>
-      <button data-tab="drivers">Taxi</button>
-      <button data-tab="messages">Komunikaty</button>
-      <button data-tab="admin" id="adminTab" class="hidden">Administracja</button>
+    <section id="stats" class="status-strip"></section>
+    <section id="alerts" class="alerts hidden"></section>
+
+    <nav class="rt-tabs">
+      <button data-tab="dispatch" class="active">DYSPOZYTOR</button>
+      <button data-tab="orders">ZLECENIA</button>
+      <button data-tab="drivers">KIEROWCY</button>
+      <button data-tab="messages">KOMUNIKACJA</button>
+      <button data-tab="admin" id="adminTab" class="hidden">ADMIN</button>
     </nav>
 
-    <section id="dashboard" class="tab active">
-      <div class="stats" id="stats"></div>
-      <div class="grid two">
-        <section class="card map-card"><div class="card-title">Mapa taxi</div><div id="map"></div></section>
-        <section class="card"><div class="card-title">Kolejki i status</div><div id="driverMini"></div></section>
-      </div>
-      <section class="card"><div class="card-title">Aktywne zlecenia</div><div id="orderMini"></div></section>
-    </section>
-
-    <section id="orders" class="tab">
-      <div class="grid two">
-        <section class="card">
-          <div class="card-title">Nowe zlecenie</div>
+    <section id="dispatch" class="tab active">
+      <div class="dispatch-grid">
+        <section class="terminal-panel order-entry">
+          <div class="window-title">NOWE ZLECENIE</div>
           <div class="form-grid">
-            <label>Podstawienie<input id="pickup" placeholder="np. Dworcowa 12"></label>
-            <label>Cel<input id="destination" placeholder="np. Portowa 7"></label>
+            <label>Podstawienie<input id="pickup" autocomplete="off"></label>
+            <label>Cel<input id="destination" autocomplete="off"></label>
             <label>Region<select id="orderRegion"></select></label>
             <label>Taryfa<select id="orderTariff"></select></label>
+            <label>Tryb<select id="dispatchMode"><option value="queue">KOLEJKA / AUTOMAT</option><option value="exchange">GIEŁDA</option></select></label>
+            <label>Źródło<select id="orderSource"><option value="dispatch">DYSP.</option><option value="phone">TELEFON</option><option value="app">APLIKACJA</option><option value="hotel">HOTEL/FIRMA</option></select></label>
             <label>Klient<input id="passengerName"></label>
             <label>Telefon<input id="passengerPhone"></label>
-            <label>Szacowana kwota<input id="estimatedPrice" type="number" step="0.01" min="0"></label>
-            <label class="check"><input id="cardRequired" type="checkbox"> wymagana karta</label>
+            <label>Pasażerowie<input id="passengerCount" type="number" min="1" max="20" value="1"></label>
+            <label>Kwota orient.<input id="estimatedPrice" type="number" step="0.01" min="0"></label>
+          </div>
+          <div class="flags">
+            <label><input id="cardRequired" type="checkbox"> KARTA</label>
+            <label><input id="luggage" type="checkbox"> BAGAŻ</label>
+            <label><input id="pet" type="checkbox"> ZWIERZĘ</label>
+            <label><input id="englishRequired" type="checkbox"> ANGIELSKI</label>
+            <label class="mine"><input id="mineWarning" type="checkbox"> MINA / RYZYKO</label>
           </div>
           <label>Uwagi<textarea id="orderNotes"></textarea></label>
-          <button id="createOrderBtn" class="primary">Utwórz i przydziel</button>
+          <button id="createOrderBtn" class="primary">ZAPISZ / WYDAJ ZLECENIE</button>
         </section>
-        <section class="card"><div class="card-title">Zlecenia</div><div id="ordersList"></div></section>
+
+        <section class="terminal-panel map-panel">
+          <div class="window-title">MAPA FLOTY NA ŻYWO</div>
+          <div id="map"></div>
+        </section>
+      </div>
+
+      <div class="dispatch-bottom">
+        <section class="terminal-panel"><div class="window-title">TAXI / REJONY / KOLEJKI</div><div id="driverMini" class="compact-table"></div></section>
+        <section class="terminal-panel"><div class="window-title">BIEŻĄCE ZLECENIA</div><div id="orderMini" class="compact-table"></div></section>
       </div>
     </section>
 
-    <section id="drivers" class="tab"><section class="card"><div class="card-title">Kierowcy / taxi</div><div id="driversList"></div></section></section>
+    <section id="orders" class="tab"><section class="terminal-panel"><div class="window-title">WSZYSTKIE ZLECENIA</div><div id="ordersList" class="compact-table"></div></section></section>
+    <section id="drivers" class="tab"><section class="terminal-panel"><div class="window-title">KIEROWCY / TAXI</div><div class="filterbar"><input id="driverFilter" placeholder="numer / status / region"><button id="driverFilterBtn">FILTRUJ</button></div><div id="driversList" class="compact-table"></div></section></section>
 
     <section id="messages" class="tab">
-      <div class="grid two">
-        <section class="card">
-          <div class="card-title">Nowy komunikat</div>
+      <div class="split">
+        <section class="terminal-panel">
+          <div class="window-title">KOMUNIKAT</div>
           <label>Tytuł<input id="messageTitle"></label>
-          <label>Typ<select id="messageType"><option value="info">Informacja</option><option value="warning">Ostrzeżenie</option><option value="urgent">Pilne</option><option value="system">System</option></select></label>
+          <label>Typ<select id="messageType"><option value="info">INFO</option><option value="warning">OSTRZEŻENIE</option><option value="urgent">PILNE</option><option value="system">SYSTEM</option></select></label>
+          <label>Adresat<select id="messageTargetType"><option value="all">WSZYSCY</option><option value="driver">KIEROWCA</option><option value="region">REGION</option></select></label>
+          <label>ID adresata<input id="messageTargetId" placeholder="UUID kierowcy lub R1"></label>
+          <div class="flags"><label><input id="messageAck" type="checkbox"> POTWIERDZENIE</label><label><input id="messageVoice" type="checkbox" checked> LEKTOR</label></div>
           <label>Treść<textarea id="messageBody"></textarea></label>
-          <button id="sendMessageBtn" class="primary">Wyślij</button>
+          <button id="sendMessageBtn" class="primary">WYŚLIJ</button>
         </section>
-        <section class="card"><div class="card-title">Ostatnie komunikaty</div><div id="messagesList"></div></section>
+        <section class="terminal-panel"><div class="window-title">HISTORIA KOMUNIKATÓW</div><div id="messagesList" class="compact-table"></div></section>
       </div>
     </section>
 
     <section id="admin" class="tab">
-      <div class="grid two">
-        <section class="card">
-          <div class="card-title">Nowe konto</div>
-          <div class="form-grid">
-            <label>E-mail<input id="newUserEmail" type="email"></label>
-            <label>Nazwa<input id="newUserName"></label>
-            <label>Hasło<input id="newUserPassword" type="password"></label>
-            <div class="roles"><label><input id="roleDriver" type="checkbox"> kierowca</label><label><input id="roleDispatcher" type="checkbox"> dyspozytor</label><label><input id="roleAdmin" type="checkbox"> admin</label></div>
-            <label>ID taxi<input id="newTaxiId" placeholder="TX2"></label>
-            <label>Numer taxi<input id="newTaxiNumber" type="number" min="1"></label>
-          </div>
-          <button id="createUserBtn" class="primary">Utwórz konto</button>
+      <div class="split">
+        <section class="terminal-panel">
+          <div class="window-title">NOWE KONTO</div>
+          <div class="form-grid"><label>E-mail<input id="newUserEmail"></label><label>Nazwa<input id="newUserName"></label><label>Hasło<input id="newUserPassword" type="password"></label><label>ID Taxi<input id="newTaxiId" placeholder="TX2"></label><label>Numer taxi<input id="newTaxiNumber" type="number"></label></div>
+          <div class="flags"><label><input id="roleDriver" type="checkbox"> KIEROWCA</label><label><input id="roleDispatcher" type="checkbox"> DYSPOZYTOR</label><label><input id="roleAdmin" type="checkbox"> ADMIN</label></div>
+          <button id="createUserBtn" class="primary">UTWÓRZ</button>
         </section>
-        <section class="card"><div class="card-title">Konta</div><div id="usersList"></div></section>
+        <section class="terminal-panel"><div class="window-title">KONTA</div><div id="usersList" class="compact-table"></div></section>
       </div>
-      <div class="grid three">
-        <section class="card"><div class="card-title">Taryfa</div><label>ID<input id="tariffId" placeholder="T3"></label><label>Nazwa<input id="tariffName" placeholder="Taryfa 3"></label><label>Start<input id="tariffStart" type="number" step="0.01"></label><label>zł/km<input id="tariffKm" type="number" step="0.01"></label><button id="saveTariffBtn">Zapisz taryfę</button></section>
-        <section class="card"><div class="card-title">Region</div><label>ID<input id="regionId" placeholder="R2"></label><label>Nazwa<input id="regionName" placeholder="Region 2"></label><label>Priorytet<input id="regionPriority" type="number" value="2"></label><button id="saveRegionBtn">Zapisz region</button></section>
-        <section class="card"><div class="card-title">Strefa</div><label>ID<input id="zoneId" placeholder="S2"></label><label>Nazwa<input id="zoneName" placeholder="Strefa 2"></label><label>Domyślna taryfa<input id="zoneTariff" placeholder="T2"></label><button id="saveZoneBtn">Zapisz strefę</button></section>
+      <div class="three">
+        <section class="terminal-panel"><div class="window-title">TARYFA</div><label>ID<input id="tariffId" placeholder="T3"></label><label>Nazwa<input id="tariffName"></label><label>Start<input id="tariffStart" type="number" step=".01"></label><label>zł/km<input id="tariffKm" type="number" step=".01"></label><button id="saveTariffBtn">ZAPISZ</button></section>
+        <section class="terminal-panel"><div class="window-title">REGION</div><label>ID<input id="regionId" placeholder="R2"></label><label>Nazwa<input id="regionName"></label><label>Priorytet<input id="regionPriority" type="number" value="2"></label><button id="saveRegionBtn">ZAPISZ</button></section>
+        <section class="terminal-panel"><div class="window-title">STREFA</div><label>ID<input id="zoneId" placeholder="S2"></label><label>Nazwa<input id="zoneName"></label><label>Taryfa<input id="zoneTariff" placeholder="T2"></label><button id="saveZoneBtn">ZAPISZ</button></section>
       </div>
     </section>
 
     <div id="toast" class="toast hidden"></div>
+    <footer class="rt-footer"><span id="footerDrivers">Taxi 0</span><span id="footerOrders">Zlecenia 0</span><span id="footerClock"></span></footer>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>

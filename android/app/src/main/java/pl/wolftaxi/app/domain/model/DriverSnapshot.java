@@ -12,6 +12,8 @@ public class DriverSnapshot {
     public Order offer;
     public int queuePosition = 0;
     public int queueSize = 0;
+    public int queuePriority = 0;
+    public SafetyAlert safetyAlert;
     public boolean connected = true;
     public String backendMode = "DEMO";
     public List<Region> regions = new ArrayList<>();
@@ -19,4 +21,6 @@ public class DriverSnapshot {
     public List<FareZone> fareZones = new ArrayList<>();
     public List<DispatchMessage> messages = new ArrayList<>();
     public List<Order> history = new ArrayList<>();
+    public List<Order> exchange = new ArrayList<>();
+    public List<RegionStat> regionStats = new ArrayList<>();
 }

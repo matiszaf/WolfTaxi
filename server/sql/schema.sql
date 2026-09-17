@@ -147,3 +147,64 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+
+-- WolfTaxi 0.5 / RT3000-core --------------------------------------------------
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS priority_points integer NOT NULL DEFAULT 0;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS blocked_reason text NOT NULL DEFAULT '';
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS tts_enabled boolean NOT NULL DEFAULT true;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS exchange_enabled boolean NOT NULL DEFAULT true;
+
+ALTER TABLE queue_entries ADD COLUMN IF NOT EXISTS priority_score integer NOT NULL DEFAULT 0;
+ALTER TABLE queue_entries ADD COLUMN IF NOT EXISTS penalty_until timestamptz;
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatch_mode text NOT NULL DEFAULT 'queue';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS forced boolean NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'dispatch';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS scheduled_for timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS luggage boolean NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pet boolean NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS english_required boolean NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS mine_warning boolean NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS requirements jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS accepted_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS arrived_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS started_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancelled_reason text NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_orders_exchange ON orders(status,dispatch_mode,scheduled_for,created_at DESC);
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS target_type text NOT NULL DEFAULT 'all';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS target_id text NOT NULL DEFAULT '';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS voice_read boolean NOT NULL DEFAULT true;
+
+CREATE TABLE IF NOT EXISTS message_ack (
+  message_id bigint NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  acknowledged_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(message_id,user_id)
+);
+
+CREATE TABLE IF NOT EXISTS safety_alerts (
+  id bigserial PRIMARY KEY,
+  driver_id uuid NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  alert_type text NOT NULL DEFAULT 'sos',
+  status text NOT NULL DEFAULT 'active',
+  note text NOT NULL DEFAULT '',
+  lat double precision,
+  lng double precision,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  acknowledged_at timestamptz,
+  acknowledged_by uuid REFERENCES users(id),
+  closed_at timestamptz,
+  closed_by uuid REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_safety_alerts_active ON safety_alerts(status,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS driver_events (
+  id bigserial PRIMARY KEY,
+  driver_id uuid REFERENCES drivers(id) ON DELETE CASCADE,
+  event_type text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_driver_events_driver ON driver_events(driver_id,created_at DESC);

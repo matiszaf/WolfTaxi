@@ -12,15 +12,20 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 public final class Ui {
-    public static final int BG = Color.rgb(7, 16, 20);
-    public static final int CARD = Color.rgb(15, 29, 35);
-    public static final int CARD_ALT = Color.rgb(20, 38, 45);
-    public static final int TEXT = Color.rgb(238, 247, 244);
-    public static final int MUTED = Color.rgb(153, 178, 174);
-    public static final int GREEN = Color.rgb(66, 230, 164);
-    public static final int ORANGE = Color.rgb(255, 176, 66);
-    public static final int RED = Color.rgb(255, 92, 92);
-    public static final int BLUE = Color.rgb(90, 170, 255);
+    // Terminalowy motyw inspirowany publicznymi ekranami RT3000: ciemne tło,
+    // zielone nagłówki, bardzo gęsty układ i mocne kolory stanów.
+    public static final int BG = Color.rgb(2, 5, 2);
+    public static final int CARD = Color.rgb(4, 15, 5);
+    public static final int CARD_ALT = Color.rgb(7, 29, 9);
+    public static final int TEXT = Color.rgb(240, 244, 236);
+    public static final int MUTED = Color.rgb(166, 177, 163);
+    public static final int GREEN = Color.rgb(77, 217, 91);
+    public static final int DARK_GREEN = Color.rgb(8, 92, 30);
+    public static final int ORANGE = Color.rgb(255, 207, 69);
+    public static final int RED = Color.rgb(255, 73, 73);
+    public static final int BLUE = Color.rgb(84, 187, 255);
+    public static final int MAGENTA = Color.rgb(255, 86, 218);
+    public static final int LINE = Color.rgb(68, 91, 67);
 
     private Ui() {}
 
@@ -43,14 +48,14 @@ public final class Ui {
 
     public static LinearLayout card(Context context, ViewGroup parent) {
         LinearLayout card = column(context);
-        card.setPadding(dp(context, 16), dp(context, 14), dp(context, 16), dp(context, 14));
+        card.setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 8));
         GradientDrawable background = new GradientDrawable();
         background.setColor(CARD);
-        background.setCornerRadius(dp(context, 14));
-        background.setStroke(dp(context, 1), Color.rgb(33, 61, 69));
+        background.setCornerRadius(dp(context, 2));
+        background.setStroke(dp(context, 1), LINE);
         card.setBackground(background);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 0, 0, dp(context, 10));
+        params.setMargins(0, 0, 0, dp(context, 5));
         parent.addView(card, params);
         return card;
     }
@@ -60,27 +65,34 @@ public final class Ui {
         view.setText(value);
         view.setTextSize(sp);
         view.setTextColor(color);
-        view.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
-        view.setPadding(0, dp(context, 2), 0, dp(context, 2));
+        view.setTypeface(Typeface.MONOSPACE, bold ? Typeface.BOLD : Typeface.NORMAL);
+        view.setPadding(0, dp(context, 1), 0, dp(context, 1));
         parent.addView(view);
+        return view;
+    }
+
+    public static TextView header(Context context, ViewGroup parent, String value) {
+        TextView view = text(context, parent, value, 12, TEXT, true);
+        view.setBackgroundColor(DARK_GREEN);
+        view.setPadding(dp(context, 6), dp(context, 4), dp(context, 6), dp(context, 4));
         return view;
     }
 
     public static Button button(Context context, ViewGroup parent, String label, int accent, View.OnClickListener listener) {
         Button button = new Button(context);
         button.setText(label);
-        button.setTextColor(Color.rgb(4, 14, 17));
-        button.setTextSize(15);
-        button.setAllCaps(false);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setTextColor(Color.rgb(0, 0, 0));
+        button.setTextSize(13);
+        button.setAllCaps(true);
+        button.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         button.setOnClickListener(listener);
         GradientDrawable background = new GradientDrawable();
         background.setColor(accent);
-        background.setCornerRadius(dp(context, 12));
+        background.setCornerRadius(dp(context, 2));
         button.setBackground(background);
-        button.setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 52));
-        params.setMargins(0, dp(context, 6), 0, 0);
+        button.setPadding(dp(context, 8), dp(context, 6), dp(context, 8), dp(context, 6));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 46));
+        params.setMargins(0, dp(context, 3), 0, 0);
         parent.addView(button, params);
         return button;
     }
@@ -88,17 +100,17 @@ public final class Ui {
     public static Button rowButton(Context context, LinearLayout parent, String label, int accent, View.OnClickListener listener) {
         Button button = new Button(context);
         button.setText(label);
-        button.setTextColor(Color.rgb(4, 14, 17));
-        button.setTextSize(13);
-        button.setAllCaps(false);
-        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setTextColor(Color.rgb(0, 0, 0));
+        button.setTextSize(11);
+        button.setAllCaps(true);
+        button.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         button.setOnClickListener(listener);
         GradientDrawable background = new GradientDrawable();
         background.setColor(accent);
-        background.setCornerRadius(dp(context, 10));
+        background.setCornerRadius(dp(context, 2));
         button.setBackground(background);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(context, 48), 1f);
-        params.setMargins(dp(context, 3), dp(context, 4), dp(context, 3), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(context, 42), 1f);
+        params.setMargins(dp(context, 2), dp(context, 2), dp(context, 2), 0);
         parent.addView(button, params);
         return button;
     }

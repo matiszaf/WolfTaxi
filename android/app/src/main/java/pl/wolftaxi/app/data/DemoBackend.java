@@ -227,6 +227,36 @@ public final class DemoBackend implements Backend {
         publish();
     }
 
+
+    @Override public void claimExchange(String orderId, ActionCallback callback) {
+        Order found = null;
+        for (Order order : snapshot.exchange) if (order.id.equals(orderId)) { found = order; break; }
+        if (found == null) { callback.complete(false, "Zlecenie nie jest już na giełdzie."); return; }
+        snapshot.exchange.remove(found);
+        found.status = OrderStatus.ACCEPTED;
+        snapshot.activeOrder = found;
+        snapshot.driver.activeOrderId = found.id;
+        snapshot.driver.status = DriverStatus.DRIVING_TO_PICKUP;
+        snapshot.queuePosition = 0; snapshot.queueSize = 0;
+        callback.complete(true, "Zlecenie pobrane z giełdy."); publish();
+    }
+
+    @Override public void sendSos(String note, ActionCallback callback) {
+        pl.wolftaxi.app.domain.model.SafetyAlert a = new pl.wolftaxi.app.domain.model.SafetyAlert();
+        a.id = "demo-sos"; a.note = note == null ? "" : note; a.createdAt = System.currentTimeMillis();
+        snapshot.safetyAlert = a; snapshot.driver.status = DriverStatus.EMERGENCY;
+        callback.complete(true, "ALARM SOS wysłany do centrali."); publish();
+    }
+
+    @Override public void cancelSos(ActionCallback callback) {
+        snapshot.safetyAlert = null; snapshot.driver.status = snapshot.driver.onShift ? DriverStatus.AVAILABLE : DriverStatus.OFFLINE;
+        callback.complete(true, "Alarm SOS odwołany."); publish();
+    }
+
+    @Override public void acknowledgeMessage(String messageId, ActionCallback callback) {
+        for (DispatchMessage m : snapshot.messages) if (m.id.equals(messageId)) m.acknowledged = true;
+        callback.complete(true, "Potwierdzono komunikat."); publish();
+    }
     @Override public void simulateOffer(ActionCallback callback) {
         if (!snapshot.driver.onShift) {
             callback.complete(false, "Najpierw rozpocznij zmianę.");
@@ -309,6 +339,8 @@ public final class DemoBackend implements Backend {
         out.offer = snapshot.offer;
         out.queuePosition = snapshot.queuePosition;
         out.queueSize = snapshot.queueSize;
+        out.queuePriority = snapshot.queuePriority;
+        out.safetyAlert = snapshot.safetyAlert;
         out.connected = snapshot.connected;
         out.backendMode = snapshot.backendMode;
         out.regions = new ArrayList<>(snapshot.regions);
@@ -316,6 +348,8 @@ public final class DemoBackend implements Backend {
         out.fareZones = new ArrayList<>(snapshot.fareZones);
         out.messages = new ArrayList<>(snapshot.messages);
         out.history = new ArrayList<>(snapshot.history);
+        out.exchange = new ArrayList<>(snapshot.exchange);
+        out.regionStats = new ArrayList<>(snapshot.regionStats);
         return out;
     }
 }

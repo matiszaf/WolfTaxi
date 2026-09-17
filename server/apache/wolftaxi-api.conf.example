@@ -1,3 +1,5 @@
+# LEGACY: konfiguracja starej ścieżki hosting.starcore.pl/wolftaxi-api.
+# Dla 0.5 używaj wolftaxi.starcore.pl.conf.example.
 # Moduły: sudo a2enmod proxy proxy_http headers
 # Wstaw do vhosta hosting.starcore.pl lub jako conf-available.
 

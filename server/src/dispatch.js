@@ -2,11 +2,21 @@ const { tx } = require('./db');
 
 const offerSeconds = () => Math.max(5, Number(process.env.OFFER_TIMEOUT_SECONDS || 20));
 
+function requirementSql(order) {
+  const checks = [];
+  // Miejsce na dalsze cechy pojazdu/kierowcy. W 0.5 wymogi są już zapisane w zleceniu
+  // i widoczne kierowcy; filtracja po dedykowanych profilach będzie rozwijana bez zmiany API.
+  if (order.english_required) checks.push('true');
+  return checks.length ? `AND ${checks.join(' AND ')}` : '';
+}
+
 async function offerOrder(client, orderId, excludeDriverId = null) {
   const orderResult = await client.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
   const order = orderResult.rows[0];
   if (!order) return false;
+  if (order.dispatch_mode === 'exchange') return false;
   if (!['created', 'searching_driver', 'offered'].includes(order.status)) return false;
+  if (order.scheduled_for && new Date(order.scheduled_for).getTime() > Date.now() + 15 * 60 * 1000) return false;
   if (!order.pickup_region_id) {
     await client.query("UPDATE orders SET status='no_driver', offered_driver_id=NULL, offer_expires_at=NULL, updated_at=now() WHERE id=$1", [orderId]);
     return false;
@@ -26,8 +36,10 @@ async function offerOrder(client, orderId, excludeDriverId = null) {
       AND d.enabled = true
       AND d.on_shift = true
       AND d.status = 'in_queue'
+      AND (q.penalty_until IS NULL OR q.penalty_until <= now())
       ${exclude}
-    ORDER BY q.joined_at ASC
+      ${requirementSql(order)}
+    ORDER BY (q.priority_score + d.priority_points) DESC, q.joined_at ASC
     LIMIT 1
   `, params);
 
@@ -68,4 +80,20 @@ async function expireOffers() {
   });
 }
 
-module.exports = { offerOrder, expireOffers };
+async function releaseScheduledOrders() {
+  await tx(async client => {
+    const due = await client.query(`
+      SELECT id FROM orders
+      WHERE status='created' AND dispatch_mode='queue' AND scheduled_for IS NOT NULL
+        AND scheduled_for <= now() + interval '15 minutes'
+      ORDER BY scheduled_for ASC
+      FOR UPDATE SKIP LOCKED
+    `);
+    for (const row of due.rows) {
+      await client.query("UPDATE orders SET status='searching_driver',updated_at=now() WHERE id=$1", [row.id]);
+      await offerOrder(client, row.id);
+    }
+  });
+}
+
+module.exports = { offerOrder, expireOffers, releaseScheduledOrders };

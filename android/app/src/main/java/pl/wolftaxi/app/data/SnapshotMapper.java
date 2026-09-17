@@ -15,6 +15,8 @@ import pl.wolftaxi.app.domain.model.FareZone;
 import pl.wolftaxi.app.domain.model.Order;
 import pl.wolftaxi.app.domain.model.Region;
 import pl.wolftaxi.app.domain.model.Tariff;
+import pl.wolftaxi.app.domain.model.SafetyAlert;
+import pl.wolftaxi.app.domain.model.RegionStat;
 
 public final class SnapshotMapper {
     private SnapshotMapper() {}
@@ -30,6 +32,10 @@ public final class SnapshotMapper {
         out.offer = order(json.optJSONObject("offer"));
         out.activeOrder = order(json.optJSONObject("activeOrder"));
         out.history = orders(json.optJSONArray("history"));
+        out.exchange = orders(json.optJSONArray("exchange"));
+        out.queuePriority = json.optInt("queuePriority", 0);
+        out.safetyAlert = safetyAlert(json.optJSONObject("safetyAlert"));
+        out.regionStats = regionStats(json.optJSONArray("regionStats"));
         out.messages = messages(json.optJSONArray("messages"));
         out.queuePosition = json.optInt("queuePosition", 0);
         out.queueSize = json.optInt("queueSize", 0);
@@ -55,6 +61,10 @@ public final class SnapshotMapper {
         out.currentTariffId = json.optString("currentTariffId", "");
         out.currentFareZoneId = json.optString("currentFareZoneId", "");
         out.activeOrderId = json.optString("activeOrderId", "");
+        out.priorityPoints = json.optInt("priorityPoints", 0);
+        out.blockedReason = json.optString("blockedReason", "");
+        out.ttsEnabled = json.optBoolean("ttsEnabled", true);
+        out.exchangeEnabled = json.optBoolean("exchangeEnabled", true);
         return out;
     }
 
@@ -140,6 +150,14 @@ public final class SnapshotMapper {
         out.notes = json.optString("notes", "");
         out.passengerCount = json.optInt("passengerCount", 1);
         out.cardRequired = json.optBoolean("cardRequired", false);
+        out.luggage = json.optBoolean("luggage", false);
+        out.pet = json.optBoolean("pet", false);
+        out.englishRequired = json.optBoolean("englishRequired", false);
+        out.mineWarning = json.optBoolean("mineWarning", false);
+        out.forced = json.optBoolean("forced", false);
+        out.dispatchMode = json.optString("dispatchMode", "queue");
+        out.source = json.optString("source", "dispatch");
+        out.scheduledFor = json.optLong("scheduledFor", 0);
         out.estimatedPrice = json.optDouble("estimatedPrice", 0);
         out.finalPrice = json.optDouble("finalPrice", 0);
         out.createdAt = json.optLong("createdAt", 0);
@@ -172,8 +190,38 @@ public final class SnapshotMapper {
             value.body = json.optString("body", "");
             value.createdAt = json.optLong("createdAt", 0);
             value.requiresAck = json.optBoolean("requiresAck", false);
+            value.voiceRead = json.optBoolean("voiceRead", true);
+            value.acknowledged = json.optBoolean("acknowledged", false);
+            value.targetType = json.optString("targetType", "all");
+            value.targetId = json.optString("targetId", "");
             out.add(value);
         }
         return out;
     }
+    private static SafetyAlert safetyAlert(JSONObject json) {
+        if (json == null) return null;
+        SafetyAlert out = new SafetyAlert();
+        out.id = json.optString("id", "");
+        out.type = json.optString("type", "sos");
+        out.status = json.optString("status", "active");
+        out.note = json.optString("note", "");
+        if (!json.isNull("lat")) out.lat = json.optDouble("lat", Double.NaN);
+        if (!json.isNull("lng")) out.lng = json.optDouble("lng", Double.NaN);
+        out.createdAt = json.optLong("createdAt", 0);
+        return out;
+    }
+
+    private static ArrayList<RegionStat> regionStats(JSONArray array) {
+        ArrayList<RegionStat> out = new ArrayList<>();
+        if (array == null) return out;
+        for (int i=0;i<array.length();i++) {
+            JSONObject json=array.optJSONObject(i); if(json==null) continue;
+            RegionStat value=new RegionStat();
+            value.id=json.optString("id",""); value.shortName=json.optString("shortName",value.id); value.name=json.optString("name","");
+            value.queued=json.optInt("queued",0); value.available=json.optInt("available",0); value.busy=json.optInt("busy",0);
+            out.add(value);
+        }
+        return out;
+    }
+
 }

@@ -15,6 +15,7 @@ public final class OperatorSnapshot {
     public ArrayList<FareZone> fareZones = new ArrayList<>();
     public ArrayList<DispatchMessage> messages = new ArrayList<>();
     public ArrayList<UserAccount> users = new ArrayList<>();
+    public ArrayList<SafetyAlertItem> alerts = new ArrayList<>();
     public boolean connected = true;
     public long generatedAt = 0;
 }

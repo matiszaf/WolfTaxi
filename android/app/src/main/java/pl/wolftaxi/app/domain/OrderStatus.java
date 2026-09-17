@@ -4,6 +4,7 @@ public enum OrderStatus {
     CREATED("created", "Nowe"),
     SEARCHING_DRIVER("searching_driver", "Szukanie kierowcy"),
     OFFERED("offered", "Oferta"),
+    EXCHANGE("exchange", "Giełda"),
     ACCEPTED("accepted", "Przyjęte"),
     EN_ROUTE("en_route", "Dojazd"),
     ARRIVED("arrived", "Na miejscu"),

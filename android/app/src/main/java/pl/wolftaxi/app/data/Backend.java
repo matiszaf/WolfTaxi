@@ -27,4 +27,8 @@ public interface Backend {
     void expireOrder(String orderId, ActionCallback callback);
     void advanceOrder(String orderId, OrderStatus nextStatus, ActionCallback callback);
     void simulateOffer(ActionCallback callback);
+    void claimExchange(String orderId, ActionCallback callback);
+    void sendSos(String note, ActionCallback callback);
+    void cancelSos(ActionCallback callback);
+    void acknowledgeMessage(String messageId, ActionCallback callback);
 }

@@ -18,6 +18,9 @@ public final class OperatorDriver {
     public String queueRegionId = "";
     public int queuePosition = 0;
     public int queueSize = 0;
+    public int queuePriority = 0;
+    public int priorityPoints = 0;
+    public String blockedReason = "";
     public double lat = Double.NaN;
     public double lng = Double.NaN;
     public double speed = 0;

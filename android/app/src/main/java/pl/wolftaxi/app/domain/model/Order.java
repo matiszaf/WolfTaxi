@@ -18,6 +18,14 @@ public class Order {
     public String notes = "";
     public int passengerCount = 1;
     public boolean cardRequired = false;
+    public boolean luggage = false;
+    public boolean pet = false;
+    public boolean englishRequired = false;
+    public boolean mineWarning = false;
+    public boolean forced = false;
+    public String dispatchMode = "queue";
+    public String source = "dispatch";
+    public long scheduledFor = 0;
     public double estimatedPrice = 0;
     public double finalPrice = 0;
     public long createdAt = 0;

@@ -20,8 +20,8 @@ android {
         applicationId 'pl.wolftaxi.app'
         minSdk 26
         targetSdk 35
-        versionCode 4
-        versionName '0.4.0-multirole'
+        versionCode 5
+        versionName '0.5.0-rt3000-core'
         buildConfigField 'String', 'API_BASE_URL', '"' + escapedApiBaseUrl + '"'
     }
 
@@ -37,4 +37,5 @@ android {
 
 dependencies {
     implementation 'com.google.android.gms:play-services-location:21.4.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 }

@@ -16,12 +16,13 @@ import pl.wolftaxi.app.domain.OrderStatus;
 import pl.wolftaxi.app.domain.model.DriverSnapshot;
 
 public final class OracleBackend implements Backend {
-    private static final long POLL_MS = 2500;
+    private static final long POLL_MS = 15000;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final AtomicBoolean inFlight = new AtomicBoolean(false);
     private final SessionStore session;
+    private final RealtimeClient realtime = new RealtimeClient();
     private BackendListener listener;
     private DriverSnapshot lastSnapshot;
     private boolean running;
@@ -51,12 +52,19 @@ public final class OracleBackend implements Backend {
     @Override public void start() {
         running = true;
         main.removeCallbacks(poll);
-        if (isSignedIn() && hasRole("driver")) main.post(poll);
+        if (isSignedIn() && hasRole("driver")) {
+            refresh();
+            realtime.start(session.token(), (type, data) -> {
+                if ("refresh".equals(type) || "hello".equals(type) || "sos".equals(type)) refresh();
+            });
+            main.postDelayed(poll, POLL_MS);
+        }
     }
 
     @Override public void stop() {
         running = false;
         main.removeCallbacks(poll);
+        realtime.stop();
     }
 
     @Override public void signIn(String email, String password, ActionCallback callback) {
@@ -123,6 +131,22 @@ public final class OracleBackend implements Backend {
 
     @Override public void advanceOrder(String orderId, OrderStatus nextStatus, ActionCallback callback) {
         action("/api/v1/orders/" + orderId + "/advance", body("nextStatus", nextStatus.wire), callback);
+    }
+
+    @Override public void claimExchange(String orderId, ActionCallback callback) {
+        action("/api/v1/driver/exchange/" + orderId + "/claim", new JSONObject(), callback);
+    }
+
+    @Override public void sendSos(String note, ActionCallback callback) {
+        action("/api/v1/driver/sos", body("note", note == null ? "" : note), callback);
+    }
+
+    @Override public void cancelSos(ActionCallback callback) {
+        action("/api/v1/driver/sos/cancel", new JSONObject(), callback);
+    }
+
+    @Override public void acknowledgeMessage(String messageId, ActionCallback callback) {
+        action("/api/v1/driver/messages/" + messageId + "/ack", new JSONObject(), callback);
     }
 
     @Override public void simulateOffer(ActionCallback callback) {

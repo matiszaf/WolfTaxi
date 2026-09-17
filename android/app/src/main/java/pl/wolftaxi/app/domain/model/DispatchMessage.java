@@ -7,6 +7,10 @@ public class DispatchMessage {
     public String body = "";
     public long createdAt = 0;
     public boolean requiresAck = false;
+    public boolean voiceRead = true;
+    public boolean acknowledged = false;
+    public String targetType = "all";
+    public String targetId = "";
 
     public DispatchMessage() {}
     public DispatchMessage(String id, String type, String title, String body, long createdAt, boolean requiresAck) {

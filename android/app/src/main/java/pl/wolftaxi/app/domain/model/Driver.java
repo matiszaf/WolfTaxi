@@ -15,6 +15,10 @@ public class Driver {
     public String currentTariffId = "";
     public String currentFareZoneId = "";
     public String activeOrderId = "";
+    public int priorityPoints = 0;
+    public String blockedReason = "";
+    public boolean ttsEnabled = true;
+    public boolean exchangeEnabled = true;
 
     public Driver() {}
 }

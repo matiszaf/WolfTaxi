@@ -1,9 +1,12 @@
-# Walidacja WolfTaxi 0.4
+# Walidacja WolfTaxi 0.5 RT3000 Core
 
-Wykonano lokalnie w środowisku projektu:
+Sprawdzono w środowisku artefaktu:
 
-- `node --check` dla `src/index.js`, `src/auth.js`, `src/operator.js`, `scripts/create-user.js`, `scripts/create-driver.js` — OK.
-- Kontrola składni Java przez `javac` do etapu brakujących klas Android SDK — brak błędów parsera (`expected`, `illegal start`, `unclosed`, `reached end`).
-- Zweryfikowano, że workflow GitHub Actions ustawia `wolftaxi.apiUrl=https://hosting.starcore.pl/wolftaxi-api`.
+- składnię Node.js dla głównych plików backendu (`node --check`),
+- obecność migracji PostgreSQL dla funkcji 0.5,
+- konfigurację WebSocket `/ws`,
+- konfigurację przykładowego vhosta `wolftaxi.starcore.pl` z `proxy_wstunnel`,
+- workflow GitHub Actions z `wolftaxi.apiUrl=https://wolftaxi.starcore.pl`,
+- wersję Android `0.5.0-rt3000-core` / versionCode 5.
 
-Pełny build Android powinien zostać wykonany przez dołączony workflow GitHub Actions, ponieważ lokalne środowisko artefaktu nie ma Android SDK.
+Pełny build APK należy wykonać przez dołączony GitHub Actions lub lokalne Android SDK.
