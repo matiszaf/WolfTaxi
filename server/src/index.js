@@ -34,13 +34,14 @@ const ok = (res, message, extra = {}) => res.json({ ok: true, message, ...extra 
 
 app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.8.0', time: new Date().toISOString() });
+  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.8.1', time: new Date().toISOString() });
 }));
 
 // Panel WWW. Publiczny Apache może mapować /dispatch/ bezpośrednio tutaj.
 const dispatchPublic = path.join(__dirname, '..', 'public', 'dispatch');
 const trackingPublic = path.join(__dirname, '..', 'public', 'track');
 app.use('/dispatch', express.static(dispatchPublic, { index: 'index.html', maxAge: 0 }));
+app.use('/track-static', express.static(trackingPublic, { maxAge: '1d' }));
 app.get('/track/:token', (_req, res) => {
   res.set('Cache-Control','no-store');
   res.sendFile(path.join(trackingPublic, 'index.html'));
@@ -378,10 +379,12 @@ app.post('/api/v1/orders/:id/advance', ...driverGuard, asyncRoute(async (req, re
       await client.query(`UPDATE orders SET status=$2, arrived_at=CASE WHEN $2='arrived' THEN now() ELSE arrived_at END, started_at=CASE WHEN $2='in_progress' THEN now() ELSE started_at END, updated_at=now() WHERE id=$1`, [order.id, next]);
       await client.query('UPDATE drivers SET status=$2,updated_at=now() WHERE id=$1', [req.driverId, driverStatus]);
       if (next === 'in_progress') await startMeter(client, order.id, req.driverId);
+      if (next === 'arrived') await queueOrderSms(client, order.id, 'arrived');
     }
     if (next === 'completed') {
       const completed = (await client.query('SELECT * FROM orders WHERE id=$1', [order.id])).rows[0];
       await createSettlement(client, completed, req.driverId);
+      await queueOrderSms(client, order.id, 'completed');
       await driverEvent(client, req.driverId, 'order.completed', { orderId:order.id, finalPrice:Number(completed.final_price||0), paymentMethod:completed.payment_method });
     } else {
       await driverEvent(client, req.driverId, 'order.'+next, { orderId:order.id });
@@ -976,24 +979,42 @@ function normalizeSmsRecipient(value) {
   return raw;
 }
 
-async function queueTrackingSms(client, orderId) {
-  const row=(await client.query(`SELECT id,passenger_name,passenger_phone,tracking_token,tracking_sms_status,status FROM orders WHERE id=$1 FOR UPDATE`,[orderId])).rows[0];
+async function queueOrderSms(client, orderId, kind) {
+  const supported=new Set(['tracking','arrived','completed']);
+  if(!supported.has(kind)) return {queued:false,reason:'unsupported_kind'};
+  const row=(await client.query(`SELECT o.id,o.passenger_name,o.passenger_phone,o.tracking_token,o.tracking_sms_status,o.status,o.pickup_address,o.destination_address,o.final_price,
+      d.number AS taxi_number,d.taxi_id
+    FROM orders o LEFT JOIN drivers d ON d.id=o.assigned_driver_id WHERE o.id=$1 FOR UPDATE OF o`,[orderId])).rows[0];
   if(!row) return {queued:false,reason:'missing_order'};
   const recipient=normalizeSmsRecipient(row.passenger_phone);
   if(!recipient){
-    await client.query(`UPDATE orders SET tracking_sms_status='skipped',tracking_sms_last_error='Brak poprawnego numeru telefonu klienta',updated_at=now() WHERE id=$1`,[orderId]);
+    if(kind==='tracking') await client.query(`UPDATE orders SET tracking_sms_status='skipped',tracking_sms_last_error='Brak poprawnego numeru telefonu klienta',updated_at=now() WHERE id=$1`,[orderId]);
     return {queued:false,reason:'invalid_phone'};
   }
-  const token=row.tracking_token || await ensureTrackingToken(client,orderId);
-  const link=trackingUrl(token);
   const first=String(row.passenger_name||'').trim().split(/\s+/)[0];
-  const prefix=first?`WolfTaxi: ${first}, Twoja taksówka jest w drodze.`:'WolfTaxi: Twoja taksówka jest w drodze.';
-  const body=`${prefix} Śledź kurs na żywo: ${link}`;
-  await client.query(`INSERT INTO sms_outbox(order_id,kind,recipient,body,status)
-    VALUES($1,'tracking',$2,$3,'queued')
-    ON CONFLICT(order_id,kind) DO NOTHING`,[orderId,recipient,body]);
-  await client.query(`UPDATE orders SET tracking_sms_status=CASE WHEN tracking_sms_status='sent' THEN 'sent' ELSE 'queued' END,tracking_sms_last_error='',updated_at=now() WHERE id=$1`,[orderId]);
-  return {queued:true,recipient};
+  const hello=first?`${first}, `:'';
+  let body='';
+  if(kind==='tracking'){
+    const token=row.tracking_token || await ensureTrackingToken(client,orderId);
+    const link=trackingUrl(token);
+    body=`WolfTaxi: ${hello}Twoja taksówka jest w drodze. Śledź kurs na żywo: ${link}`;
+  } else if(kind==='arrived'){
+    const taxi=Number(row.taxi_number||0)>0?`Taxi ${Number(row.taxi_number)}`:(String(row.taxi_id||'').trim()||'Kierowca');
+    body=`WolfTaxi: ${hello}${taxi} jest już na miejscu i czeka${row.pickup_address?` pod adresem ${String(row.pickup_address).trim()}`:''}.`;
+  } else if(kind==='completed'){
+    const amount=Number(row.final_price||0);
+    const amountText=amount>0?` Kwota kursu: ${amount.toFixed(2).replace('.',',')} zł.`:'';
+    body=`WolfTaxi: ${hello}dziękujemy za przejazd.${amountText}`;
+  }
+  const inserted=await client.query(`INSERT INTO sms_outbox(order_id,kind,recipient,body,status)
+    VALUES($1,$2,$3,$4,'queued')
+    ON CONFLICT(order_id,kind) DO NOTHING RETURNING id`,[orderId,kind,recipient,body]);
+  if(kind==='tracking') await client.query(`UPDATE orders SET tracking_sms_status=CASE WHEN tracking_sms_status='sent' THEN 'sent' ELSE 'queued' END,tracking_sms_last_error='',updated_at=now() WHERE id=$1`,[orderId]);
+  return {queued:inserted.rowCount>0,recipient,kind};
+}
+
+async function queueTrackingSms(client, orderId) {
+  return queueOrderSms(client,orderId,'tracking');
 }
 
 function trackingUrl(token) {
@@ -1057,7 +1078,7 @@ async function updateMeterForLocation(client,driverId,lat,lng,speed,accuracy){
 
 const port = Math.max(1, Number(process.env.PORT || 8081));
 const host = process.env.HOST || '127.0.0.1';
-const server = app.listen(port, host, () => console.log(`[WolfTaxi] API 0.7.0 TAXIMETER/LIVE/TRACKING działa na http://${host}:${port}`));
+const server = app.listen(port, host, () => console.log(`[WolfTaxi] API 0.8.1 SMS AUTOMATION działa na http://${host}:${port}`));
 realtime.attachRealtime(server);
 
 const timer = setInterval(async () => {

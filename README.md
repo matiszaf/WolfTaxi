@@ -1,3 +1,7 @@
+# WolfTaxi 0.8.1 — SMS AUTOMATION
+
+Automatyczne SMS-y klienta + trwała poprawka strony trackingowej.
+
 # WolfTaxi 0.8 — prywatna bramka SMS w tej samej aplikacji
 
 WolfTaxi 0.8 rozwija 0.7 (taksometr + mapa LIVE + publiczny link śledzenia) o darmową bramkę SMS działającą z prywatnego APK na Androidzie.
