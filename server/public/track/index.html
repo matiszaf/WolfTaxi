@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <title>WolfTaxi · śledzenie kursu</title>
+  <link rel="stylesheet" href="/track-static/leaflet/leaflet.css">
+  <style>
+    :root{color-scheme:dark;--bg:#07110f;--card:#0d1c19;--line:#17332d;--text:#effff9;--muted:#8da9a0;--green:#29d17d;--orange:#ffb84d}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    .wrap{max-width:760px;margin:auto;padding:14px}.brand{font-size:13px;color:var(--green);font-weight:800;letter-spacing:.08em}.title{font-size:25px;font-weight:800;margin:3px 0 12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;margin:10px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.label{font-size:10px;color:var(--muted);font-weight:700}.value{font-size:17px;font-weight:800;margin-top:3px}.muted{color:var(--muted);font-size:12px}.price{font-size:28px;color:var(--green);font-weight:900}
+    #map{height:54vh;min-height:330px;border-radius:14px;border:1px solid var(--line);overflow:hidden}.status{display:inline-block;padding:5px 9px;border-radius:99px;background:#14352a;color:var(--green);font-size:11px;font-weight:800}.error{color:#ff7373}.footer{text-align:center;color:var(--muted);font-size:11px;padding:10px}
+    @media(max-width:520px){.wrap{padding:8px}.title{font-size:21px}#map{height:50vh}.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">WOLFTAXI</div>
+  <div class="title">Śledzenie kursu</div>
+  <div id="summary" class="card"><span class="muted">Łączenie z kursem…</span></div>
+  <div id="map"></div>
+  <div class="card grid">
+    <div><div class="label">TAKSOMETR</div><div id="meter" class="price">—</div></div>
+    <div><div class="label">TRASA / POSTÓJ</div><div id="stats" class="value">—</div></div>
+  </div>
+  <div class="footer">Pozycja jest udostępniana wyłącznie dla tego kursu. Link wygasa automatycznie.</div>
+</div>
+<script src="/track-static/leaflet/leaflet.js"></script>
+<script>
+const token=decodeURIComponent(location.pathname.split('/').filter(Boolean).pop()||'');
+const map=L.map('map',{zoomControl:true}).setView([54.5189,18.5305],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+let marker=null,first=true,timer=null;
+const money=n=>new Intl.NumberFormat('pl-PL',{style:'currency',currency:'PLN'}).format(Number(n||0));
+const statusName=s=>({accepted:'przyjęte',en_route:'dojazd do klienta',arrived:'na miejscu',in_progress:'kurs trwa',completed:'kurs zakończony',cancelled:'kurs anulowany'}[s]||s||'—');
+async function refresh(){
+  try{
+    const r=await fetch('/api/v1/public/track/'+encodeURIComponent(token),{cache:'no-store'}); const d=await r.json(); if(!r.ok)throw new Error(d.message||'Link jest niedostępny.');
+    document.getElementById('summary').innerHTML=`<span class="status">${statusName(d.status)}</span><div class="value">Taxi ${d.taxiNumber||d.taxiId||'—'}</div><div class="muted">${esc(d.pickupAddress||'')} ${d.destinationAddress?'→ '+esc(d.destinationAddress):''}</div><div class="muted">Aktualizacja: ${d.lastLocationAt?new Date(d.lastLocationAt).toLocaleTimeString('pl-PL'):'oczekiwanie na GPS'}</div>`;
+    document.getElementById('meter').textContent=d.meterAmount>0?money(d.meterAmount):'—';
+    document.getElementById('stats').textContent=`${(Number(d.meterDistanceM||0)/1000).toFixed(2)} km · postój ${Math.floor(Number(d.meterWaitingSeconds||0)/60)} min`;
+    if(Number.isFinite(d.lat)&&Number.isFinite(d.lng)){
+      if(!marker) marker=L.marker([d.lat,d.lng]).addTo(map).bindPopup(`Taxi ${d.taxiNumber||''}`); else marker.setLatLng([d.lat,d.lng]);
+      if(first){map.setView([d.lat,d.lng],16);first=false}else map.panTo([d.lat,d.lng],{animate:true,duration:.5});
+    }
+    if(d.status==='completed'||d.status==='cancelled'){clearTimeout(timer);timer=null;return;}
+  }catch(e){document.getElementById('summary').innerHTML=`<b class="error">${esc(e.message)}</b>`}
+  timer=setTimeout(refresh,3000);
+}
+function esc(v){return String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+refresh();
+</script>
+</body>
+</html>
