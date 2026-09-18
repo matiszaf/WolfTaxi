@@ -1,3 +1,10 @@
+# WolfTaxi 0.5.3 — KODY PODCZAS KURSU
+
+- Naprawiono blokadę zakładki **REJONY/KODY** podczas aktywnego zlecenia.
+- Po rozpoczęciu kursu można przełączyć się do **REJONY**, używać klawiatury numerycznej, kodów i funkcji terminala, a następnie wrócić do **ZLEC.**
+- Nowa oferta nadal automatycznie otwiera **ZLEC.**, aby nie przeoczyć przyjęcia/odrzucenia.
+- Backend bez zmian — aktualizacja dotyczy tylko aplikacji Android.
+
 # WolfTaxi 0.5.2 — RT3000 REGION + ACTION
 
 - Kod rejonu jest teraz argumentem dla przycisków ruchu.

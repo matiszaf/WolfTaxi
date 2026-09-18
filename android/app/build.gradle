@@ -14,7 +14,7 @@ def apiBaseUrl = localProps.getProperty('wolftaxi.apiUrl', '').trim()
 def escapedApiBaseUrl = apiBaseUrl.replace('\\', '\\\\').replace('"', '\\"')
 
 def versionCodeFromEnv = System.getenv('WOLFTAXI_VERSION_CODE') ?: '5'
-def versionNameFromEnv = System.getenv('WOLFTAXI_VERSION_NAME') ?: '0.5.2-rt3000-region-action'
+def versionNameFromEnv = System.getenv('WOLFTAXI_VERSION_NAME') ?: '0.5.3-rt3000-codes-during-ride'
 
 def releaseKeystorePath = System.getenv('WOLFTAXI_KEYSTORE_PATH') ?: ''
 def releaseStorePassword = System.getenv('WOLFTAXI_KEYSTORE_PASSWORD') ?: ''

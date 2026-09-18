@@ -1,3 +1,7 @@
+# WolfTaxi 0.5.3 RT3000 — kody podczas kursu
+
+Ta wersja pozwala wejść do zakładki REJONY/KODY także podczas aktywnego kursu. Backend 0.5.2 pozostaje zgodny i nie wymaga aktualizacji.
+
 # WolfTaxi 0.5.2 — RT3000 Terminal / Oracle
 
 WolfTaxi 0.5.2 rozwija RT3000 Core o terminalowy układ kierowcy: zakładki, klawiaturę rejonów, przyciski funkcyjne i pytania TAK/NIE z centrali. Nadal jest to **jedna aplikacja Android** (`pl.wolftaxi.app`) dla kierowcy, dyspozytora i administratora, plus panel WWW dyspozytorni.

@@ -197,8 +197,10 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         toastLine=null;
         if(snapshot==null){header("Terminal kierowcy","Łączenie…",Ui.GREEN);return;}
 
+        // Nowa oferta nadal otwiera zakładkę ZLEC., ale aktywny kurs nie blokuje
+        // ręcznego przejścia do REJONY/KODY. Kierowca musi móc używać kodów
+        // i klawiatury terminala także podczas trwającego zlecenia.
         if(snapshot.offer!=null) driverTab=DriverTab.ORDER;
-        else if(snapshot.activeOrder!=null && driverTab==DriverTab.REGIONS) driverTab=DriverTab.ORDER;
         else if(pendingQuestion()!=null && snapshot.activeOrder==null && snapshot.offer==null) driverTab=DriverTab.CENTRAL;
 
         renderDriverHeader();
