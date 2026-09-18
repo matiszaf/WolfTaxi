@@ -147,6 +147,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
 
     private void enterAfterLogin() {
         if (!backend.isSignedIn()) { loginScreen(); return; }
+        resumeSmsGatewayIfEnabled();
         int count = roleCount();
         if (count > 1) showModeChooser();
         else if (backend.hasRole("driver")) switchMode(AppMode.DRIVER);
@@ -174,7 +175,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         AppMode previous=mode;
         mode=next; stopCountdown(); backend.stop(); operatorBackend.stop();
         if(next!=AppMode.DRIVER) stopLocationService();
-        if(previous==AppMode.SMS_GATEWAY && next!=AppMode.SMS_GATEWAY) stopSmsGateway();
+        // Bramka SMS jest usługą urządzenia, nie ekranem. Zmiana trybu nie może jej zatrzymywać.
         dashboardShell();
         if(next==AppMode.DRIVER){ snapshot=null; renderDriverDashboard(); backend.start(); }
         else if(next==AppMode.DISPATCHER || next==AppMode.ADMIN){ operatorSnapshot=null; renderOperatorDashboard(); operatorBackend.start(next==AppMode.ADMIN); }
@@ -754,7 +755,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     }
 
     private void ensureSmsGateway(boolean ask){
-        if(mode!=AppMode.SMS_GATEWAY||!backend.hasRole("sms_gateway"))return;
+        if(!backend.isSignedIn()||!backend.hasRole("sms_gateway"))return;
         boolean sms=checkSelfPermission(Manifest.permission.SEND_SMS)==PackageManager.PERMISSION_GRANTED;
         if(!sms){
             if(ask){
@@ -767,7 +768,16 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         if(Build.VERSION.SDK_INT>=26)startForegroundService(service);else startService(service);
         handler.postDelayed(this::renderSmsGatewayDashboard,500);
     }
-    private void stopSmsGateway(){stopService(new Intent(this,SmsGatewayService.class));}
+    private void stopSmsGateway(){
+        SmsGatewayService.setEnabled(this,false);
+        stopService(new Intent(this,SmsGatewayService.class));
+    }
+    private void resumeSmsGatewayIfEnabled(){
+        if(!SmsGatewayService.isEnabled(this)||!backend.isSignedIn()||!backend.hasRole("sms_gateway"))return;
+        if(checkSelfPermission(Manifest.permission.SEND_SMS)!=PackageManager.PERMISSION_GRANTED)return;
+        Intent service=new Intent(this,SmsGatewayService.class);
+        if(Build.VERSION.SDK_INT>=26)startForegroundService(service);else startService(service);
+    }
 
     private void ensureLocationService(boolean ask){if(mode!=AppMode.DRIVER||"DEMO".equals(snapshot==null?"":snapshot.backendMode))return;boolean fine=checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED,coarse=checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED;if(!fine&&!coarse){if(ask){if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.POST_NOTIFICATIONS},REQUEST_LOCATION);else requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION},REQUEST_LOCATION);}return;}Intent service=new Intent(this,DriverLocationService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(service);else startService(service);}
     private void stopLocationService(){stopService(new Intent(this,DriverLocationService.class));}

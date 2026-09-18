@@ -9,3 +9,11 @@ Sprawdzone przed spakowaniem:
 - panel REJONY zachowuje dotychczasowy layout,
 - automatyka tracking/SMS pozostaje w paczce,
 - finalny compile APK wykonuje GitHub Actions z tym samym stałym podpisem.
+
+
+## 0.8.4 checks
+- tryb SMS -> Kierowca nie wywołuje stopSmsGateway
+- ręczne WYŁĄCZ ustawia enabled=false i zatrzymuje usługę
+- logout zatrzymuje usługę
+- BootReceiver wymaga enabled + aktywnej sesji + roli sms_gateway + SEND_SMS
+- usługa ma START_STICKY oraz stopWithTask=false

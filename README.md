@@ -24,3 +24,12 @@ Zmiany bieżącego rejonu są zapisywane jako `region.current`, a osiągnięcie 
 
 ## Pozostałe funkcje
 Zachowane są funkcje 0.8.2/0.8.1: tracking klienta, mapa LIVE, taksometr, automatyka SMS, bramka SMS i stały podpis APK.
+
+
+## 0.8.4 – SMS Gateway w tle
+- Bramka SMS nie jest już zatrzymywana po zmianie trybu na Kierowca/Dyspozytor/Admin.
+- Po ręcznym włączeniu działa jako foreground service także przy zminimalizowanej aplikacji i wygaszonym ekranie.
+- Android może wznowić usługę po ubiciu procesu (`START_STICKY`).
+- Po restarcie telefonu bramka jest automatycznie wznawiana po `BOOT_COMPLETED`, jeżeli była wcześniej włączona, sesja nadal ma rolę `sms_gateway` i jest przyznane `SEND_SMS`.
+- Wyłączenie następuje wyłącznie przez przycisk WYŁĄCZ BRAMKĘ albo wylogowanie.
+- Utrata internetu nie wyłącza bramki; kolejne odpytywanie backendu ponawia się automatycznie.

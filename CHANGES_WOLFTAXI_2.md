@@ -9,3 +9,11 @@
 - Osiągnięcie celu (`current == target`) automatycznie czyści cel.
 - Dodano zdarzenia `region.current` i `target.reached` oraz wpisy audytu.
 - Wygląd panelu REJONY nie został zmieniony.
+
+
+### 0.8.4
+- trwała bramka SMS niezależna od aktywnego trybu UI
+- foreground service pozostaje aktywny po zmianie trybu
+- automatyczny restart po BOOT_COMPLETED
+- flaga enabled nie jest zerowana przez systemowe zniszczenie usługi
+- stopWithTask=false

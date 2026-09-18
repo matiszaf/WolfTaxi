@@ -46,6 +46,10 @@ public final class SmsGatewayService extends Service {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false);
     }
 
+    public static void setEnabled(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, enabled).apply();
+    }
+
     public static String lastStatus(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_LAST_STATUS, "Bramka nie była jeszcze używana.");
     }
@@ -77,7 +81,8 @@ public final class SmsGatewayService extends Service {
     }
 
     @Override public void onDestroy() {
-        prefs.edit().putBoolean(KEY_ENABLED, false).apply();
+        // Nie wyłączamy trwałej flagi tutaj. Android może zniszczyć usługę przy braku pamięci
+        // lub podczas aktualizacji procesu. START_STICKY / BootReceiver uruchomi ją ponownie.
         scheduler.shutdownNow();
         super.onDestroy();
     }
@@ -89,6 +94,7 @@ public final class SmsGatewayService extends Service {
         try {
             if (!session.hasSession() || !session.hasRole("sms_gateway")) {
                 remember("Brak aktywnej sesji bramki SMS.", "", "");
+                setEnabled(this, false);
                 stopSelf();
                 return;
             }
