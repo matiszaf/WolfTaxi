@@ -1,35 +1,35 @@
-# WolfTaxi 0.8.3 — LOGIKA REJONÓW
+# WolfTaxi 0.9 — FULL PANEL APP
 
-Ta wersja porządkuje semantykę klawiatury regionów bez zmiany wyglądu ekranu REJONY.
+WolfTaxi 0.9 przenosi funkcje panelu WEB dyspozytora i administratora do tej samej aplikacji Android, bez zmiany stylu terminala kierowcy.
 
-## Zasady terminala
-- `KOD + OK` — zawsze ustawia **BIEŻĄCY rejon** kierowcy.
-- `KOD + KURSEM` — ustawia **DOCELOWY rejon** i tryb KURSEM, jeśli nie ma aktywnego zlecenia; podczas aktywnego zlecenia zmienia tylko cel, nie etap kursu.
-- `KOD + DOJAZD` — ustawia **DOCELOWY rejon** i tryb DOJAZD, jeśli nie ma aktywnego zlecenia; podczas aktywnego zlecenia zmienia tylko cel, nie etap kursu.
-- Aktywne zlecenie z centrali nie blokuje `KOD + OK`.
-- `current_region_id` i `target_region_id` są niezależne.
-- Jeśli kierowca zatwierdzi przez `OK` rejon równy celowi, cel jest automatycznie zamykany.
+## Najważniejsze
+- ekran `REJONY` kierowcy pozostaje bez zmian wizualnych,
+- role kierowca / dyspozytor / administrator / bramka SMS nadal działają w jednej aplikacji,
+- dyspozytor i administrator dostają panel w stylu istniejącej aplikacji, podzielony na zakładki,
+- funkcje są podpięte do istniejącego Oracle API — nie są atrapami.
 
-## Kolejka
-`OK` może automatycznie zapisać kierowcę do kolejki tylko wtedy, gdy:
-- nie ma aktywnego zlecenia/oferty,
-- status to `available` lub `in_queue`,
-- rejon ma włączoną kolejkę,
-- a przy rejonie z poligonem GPS potwierdza obecność w rejonie.
+## Zakładki panelu w aplikacji
+- **DYSPO** — statystyki, SOS, szybkie akcje, kierowcy, bieżące zlecenia, podsumowanie rozliczeń,
+- **ZLEC.** — wszystkie zlecenia, tworzenie, przypisywanie, nakaz, anulowanie, link śledzenia klienta,
+- **KIER.** — kierowcy, status, rejon/kolejka, taryfa, GPS, priorytety,
+- **MAPA** — mapa floty LIVE,
+- **KOMUN.** — komunikaty, ostrzeżenia, pilne, systemowe i pytania TAK/NIE; adresowanie do wszystkich/kierowcy/rejonu; ACK i TTS,
+- **CRM** — klienci, firmy, vouchery oraz tworzenie nowych rekordów,
+- **ROZL.** — podsumowanie dnia i zamykanie rozliczeń kursów,
+- **HIST.** — audyt i historia systemu,
+- **ADMIN** — konta, blokowanie/odblokowanie, taryfy, regiony i strefy taryfowe.
 
-Podczas kursu `OK` zmienia wyłącznie bieżący rejon — nie zapisuje do kolejki i nie zmienia etapu zlecenia.
+## Zlecenia
+Formularz w aplikacji obsługuje pola z panelu WEB: adres odbioru/cel, region, taryfa, kolejka/giełda, źródło, termin, dane klienta, CRM, firma, voucher, centrum kosztów, numer rezerwacji, liczba pasażerów, kwota orientacyjna, karta, bagaż, zwierzę, język angielski, mina/ryzyko i uwagi.
 
-## Historia
-Zmiany bieżącego rejonu są zapisywane jako `region.current`, a osiągnięcie wcześniej ustawionego celu jako `target.reached`. Trafiają również do audytu centrali.
+## Zachowane funkcje wcześniejszych wersji
+- logika regionów: `OK = obecny rejon`, `KURSEM/DOJAZD = rejon docelowy`,
+- tracking klienta z mapą LIVE,
+- taksometr,
+- automatyka SMS,
+- bramka SMS działająca w tle,
+- WebSockety,
+- stały podpis APK.
 
-## Pozostałe funkcje
-Zachowane są funkcje 0.8.2/0.8.1: tracking klienta, mapa LIVE, taksometr, automatyka SMS, bramka SMS i stały podpis APK.
-
-
-## 0.8.4 – SMS Gateway w tle
-- Bramka SMS nie jest już zatrzymywana po zmianie trybu na Kierowca/Dyspozytor/Admin.
-- Po ręcznym włączeniu działa jako foreground service także przy zminimalizowanej aplikacji i wygaszonym ekranie.
-- Android może wznowić usługę po ubiciu procesu (`START_STICKY`).
-- Po restarcie telefonu bramka jest automatycznie wznawiana po `BOOT_COMPLETED`, jeżeli była wcześniej włączona, sesja nadal ma rolę `sms_gateway` i jest przyznane `SEND_SMS`.
-- Wyłączenie następuje wyłącznie przez przycisk WYŁĄCZ BRAMKĘ albo wylogowanie.
-- Utrata internetu nie wyłącza bramki; kolejne odpytywanie backendu ponawia się automatycznie.
+## Instalacja
+Backend nie wymaga osobnej aktualizacji dla funkcji panelu 0.9 — aplikacja korzysta z endpointów już dostępnych na serwerze WolfTaxi. Zbuduj APK przez istniejący workflow GitHub Actions ze stałym kluczem podpisu.

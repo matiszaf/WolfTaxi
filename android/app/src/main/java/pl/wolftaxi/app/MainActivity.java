@@ -25,6 +25,8 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.webkit.WebView;
+import android.webkit.WebSettings;
 
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
@@ -53,6 +55,11 @@ import pl.wolftaxi.app.domain.operator.OperatorDriver;
 import pl.wolftaxi.app.domain.operator.OperatorSnapshot;
 import pl.wolftaxi.app.domain.operator.UserAccount;
 import pl.wolftaxi.app.domain.operator.SafetyAlertItem;
+import pl.wolftaxi.app.domain.operator.OperatorClient;
+import pl.wolftaxi.app.domain.operator.OperatorCompany;
+import pl.wolftaxi.app.domain.operator.OperatorVoucher;
+import pl.wolftaxi.app.domain.operator.OperatorSettlement;
+import pl.wolftaxi.app.domain.operator.OperatorAuditEntry;
 import pl.wolftaxi.app.service.DriverLocationService;
 import pl.wolftaxi.app.service.SmsGatewayService;
 import pl.wolftaxi.app.ui.Ui;
@@ -60,6 +67,7 @@ import pl.wolftaxi.app.ui.Ui;
 public final class MainActivity extends Activity implements BackendListener, OperatorListener {
     private enum AppMode { DRIVER, DISPATCHER, ADMIN, SMS_GATEWAY }
     private enum DriverTab { REGIONS, ORDER, EXCHANGE, CENTRAL, MENU }
+    private enum OperatorTab { DISPATCH, ORDERS, DRIVERS, MAP, MESSAGES, CRM, SETTLEMENTS, HISTORY, ADMIN }
     private static final int REQUEST_LOCATION = 140;
     private static final int REQUEST_SMS = 141;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -83,6 +91,8 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private final Set<String> spokenMessageIds = new HashSet<>();
     private DriverTab driverTab = DriverTab.REGIONS;
     private String regionCodeBuffer = "";
+    private OperatorTab operatorTab = OperatorTab.DISPATCH;
+    private String operatorDriverFilter = "";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -178,7 +188,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         // Bramka SMS jest usługą urządzenia, nie ekranem. Zmiana trybu nie może jej zatrzymywać.
         dashboardShell();
         if(next==AppMode.DRIVER){ snapshot=null; renderDriverDashboard(); backend.start(); }
-        else if(next==AppMode.DISPATCHER || next==AppMode.ADMIN){ operatorSnapshot=null; renderOperatorDashboard(); operatorBackend.start(next==AppMode.ADMIN); }
+        else if(next==AppMode.DISPATCHER || next==AppMode.ADMIN){ operatorTab=OperatorTab.DISPATCH; operatorSnapshot=null; renderOperatorDashboard(); operatorBackend.start(next==AppMode.ADMIN); }
         else { renderSmsGatewayDashboard(); ensureSmsGateway(true); }
     }
 
@@ -635,14 +645,107 @@ public final class MainActivity extends Activity implements BackendListener, Ope
 
     // ---------------- OPERATOR / ADMIN UI ----------------
     private void renderOperatorDashboard(){
-        if(root==null||(mode!=AppMode.DISPATCHER&&mode!=AppMode.ADMIN))return;root.removeAllViews();toastLine=null;
+        if(root==null||(mode!=AppMode.DISPATCHER&&mode!=AppMode.ADMIN))return;
+        root.removeAllViews();toastLine=null;
         if(operatorSnapshot==null){header(mode==AppMode.ADMIN?"Administrator":"Dyspozytornia","Łączenie z Oracle…",Ui.BLUE);return;}
-        LinearLayout h=Ui.row(this);root.addView(h);LinearLayout left=Ui.column(this);h.addView(left,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));Ui.text(this,left,"WOLFTAXI",15,Ui.GREEN,true);Ui.text(this,left,mode==AppMode.ADMIN?"Administrator":"Dyspozytornia",25,Ui.TEXT,true);TextView badge=Ui.text(this,h,(operatorSnapshot.connected?"ONLINE":"OFFLINE")+" · ORACLE",12,operatorSnapshot.connected?Ui.GREEN:Ui.RED,true);badge.setGravity(Gravity.END);
-        renderOperatorAlerts(); renderOperatorStats(); renderOperatorActions(); renderOperatorDrivers(); renderOperatorOrders(); renderOperatorMessages(); renderOperatorSettlementSummary(); if(mode==AppMode.ADMIN)renderAdminSummary(); renderSessionActions(); toastLine=Ui.text(this,root,"",13,Ui.MUTED,false);
+        LinearLayout h=Ui.row(this);root.addView(h);
+        LinearLayout left=Ui.column(this);h.addView(left,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));
+        Ui.text(this,left,"WOLFTAXI",15,Ui.GREEN,true);Ui.text(this,left,mode==AppMode.ADMIN?"Administrator":"Dyspozytornia",23,Ui.TEXT,true);
+        TextView badge=Ui.text(this,h,(operatorSnapshot.connected?"ONLINE":"OFFLINE")+" · ORACLE",11,operatorSnapshot.connected?Ui.GREEN:Ui.RED,true);badge.setGravity(Gravity.END);
+        renderOperatorAlerts();
+        renderOperatorTabs();
+        switch(operatorTab){
+            case DISPATCH: renderOperatorDispatchTab(); break;
+            case ORDERS: renderOperatorOrdersTab(); break;
+            case DRIVERS: renderOperatorDriversTab(); break;
+            case MAP: renderOperatorMapTab(); break;
+            case MESSAGES: renderOperatorMessagesTab(); break;
+            case CRM: renderOperatorCrmTab(); break;
+            case SETTLEMENTS: renderOperatorSettlementsTab(); break;
+            case HISTORY: renderOperatorHistoryTab(); break;
+            case ADMIN: if(mode==AppMode.ADMIN)renderOperatorAdminTab(); else {operatorTab=OperatorTab.DISPATCH;renderOperatorDispatchTab();} break;
+        }
+        renderSessionActions();
+        toastLine=Ui.text(this,root,"",12,Ui.MUTED,false);
     }
+
+    private void renderOperatorTabs(){
+        LinearLayout r1=Ui.row(this);root.addView(r1);
+        opTab(r1,"DYSPO",OperatorTab.DISPATCH);opTab(r1,"ZLEC.",OperatorTab.ORDERS);opTab(r1,"KIER.",OperatorTab.DRIVERS);opTab(r1,"MAPA",OperatorTab.MAP);
+        LinearLayout r2=Ui.row(this);root.addView(r2);
+        opTab(r2,"KOMUN.",OperatorTab.MESSAGES);opTab(r2,"CRM",OperatorTab.CRM);opTab(r2,"ROZL.",OperatorTab.SETTLEMENTS);opTab(r2,"HIST.",OperatorTab.HISTORY);
+        if(mode==AppMode.ADMIN){LinearLayout r3=Ui.row(this);root.addView(r3);opTab(r3,"ADMIN",OperatorTab.ADMIN);}
+    }
+    private void opTab(LinearLayout row,String label,OperatorTab tab){Ui.tabButton(this,row,label,operatorTab==tab,v->{operatorTab=tab;renderOperatorDashboard();});}
+
+    private void renderOperatorDispatchTab(){renderOperatorStats();renderOperatorActions();renderOperatorDriversCompact();renderOperatorOrdersCompact();renderOperatorSettlementSummary();}
+    private void renderOperatorDriversCompact(){LinearLayout card=Ui.card(this,root);Ui.header(this,card,"TAXI / REJONY / KOLEJKI");int n=0;for(OperatorDriver d:operatorSnapshot.drivers){if(n++>=12)break;renderDriverLine(card,d,false);}if(n==0)Ui.text(this,card,"Brak kierowców.",12,Ui.MUTED,false);}
+    private void renderOperatorOrdersCompact(){LinearLayout card=Ui.card(this,root);Ui.header(this,card,"BIEŻĄCE ZLECENIA");int n=0;for(Order o:operatorSnapshot.orders){if(o.status==OrderStatus.COMPLETED||o.status==OrderStatus.CANCELLED)continue;if(n++>=10)break;renderOrderBlock(card,o,false);}if(n==0)Ui.text(this,card,"Brak bieżących zleceń.",12,Ui.MUTED,false);}
+
+    private void renderOperatorDriversTab(){
+        LinearLayout tools=Ui.card(this,root);Ui.header(this,tools,"KIEROWCY / TAXI");
+        LinearLayout row=Ui.row(this);tools.addView(row);EditText f=plainField("numer / status / rejon");f.setText(operatorDriverFilter);row.addView(f,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));
+        Button b=new Button(this);b.setText("FILTRUJ");b.setOnClickListener(v->{operatorDriverFilter=f.getText().toString().trim().toLowerCase(Locale.ROOT);renderOperatorDashboard();});row.addView(b);
+        LinearLayout card=Ui.card(this,root);String filter=operatorDriverFilter;
+        for(OperatorDriver d:operatorSnapshot.drivers){String hay=(d.taxiId+" "+d.number+" "+d.status+" "+d.currentRegionId+" "+d.queueRegionId+" "+d.name).toLowerCase(Locale.ROOT);if(!filter.isEmpty()&&!hay.contains(filter))continue;renderDriverLine(card,d,true);}
+    }
+    private void renderDriverLine(LinearLayout card,OperatorDriver d,boolean actions){
+        Ui.text(this,card,safe(d.taxiId)+" #"+d.number+" · "+safe(d.name),14,Ui.TEXT,true);
+        String region=d.queueRegionId.isEmpty()?safe(d.currentRegionId):d.queueRegionId;String meta=(d.online?"ONLINE":"offline")+" · "+d.status+" · "+(region.isEmpty()?"—":region)+(d.queuePosition>0?" "+d.queuePosition+"/"+d.queueSize:"");if(!safe(d.targetRegionId).isEmpty())meta+=" → "+d.targetRegionId;
+        Ui.text(this,card,meta,11,d.online?Ui.GREEN:Ui.MUTED,false);Ui.text(this,card,"T:"+safe(d.currentTariffId)+" · PRI:"+d.priorityPoints+" · GPS "+(d.lastLocationAt>0?clock.format(new Date(d.lastLocationAt)):"—"),10,Ui.MUTED,false);
+        if(actions){LinearLayout a=Ui.row(this);card.addView(a);Ui.rowButton(this,a,"PRI",Ui.BLUE,v->priorityDialog(d));if(!Double.isNaN(d.lat)&&!Double.isNaN(d.lng))Ui.rowButton(this,a,"MAPA",Ui.GREEN,v->openGeo(d.lat,d.lng,d.taxiId));}
+    }
+    private void priorityDialog(OperatorDriver d){EditText x=numberField("Priorytet -100…100");x.setText(String.valueOf(d.priorityPoints));new AlertDialog.Builder(this).setTitle("Priorytet "+d.taxiId).setView(x).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(q,w)->operatorAction(cb->operatorBackend.setDriverPriority(d.id,(int)parseDouble(x),cb))).show();}
+
+    private void renderOperatorOrdersTab(){
+        Ui.button(this,root,"NOWE ZLECENIE",Ui.GREEN,v->newOrderDialog());LinearLayout card=Ui.card(this,root);Ui.header(this,card,"WSZYSTKIE ZLECENIA");
+        if(operatorSnapshot.orders.isEmpty()){Ui.text(this,card,"Brak zleceń.",12,Ui.MUTED,false);return;}for(Order o:operatorSnapshot.orders)renderOrderBlock(card,o,true);
+    }
+    private void renderOrderBlock(LinearLayout card,Order o,boolean full){
+        Ui.text(this,card,o.id+" · "+o.status.label.toUpperCase(Locale.ROOT),12,orderColor(o.status),true);Ui.text(this,card,safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress),14,Ui.TEXT,true);
+        String p=(safe(o.pickupRegionId).isEmpty()?"—":o.pickupRegionId)+" · "+o.passengerCount+" os."+(o.luggage?" · BAG":"")+(o.pet?" · PET":"")+(o.englishRequired?" · EN":"")+(o.mineWarning?" · MINA":"");Ui.text(this,card,p,10,Ui.MUTED,false);
+        if(o.meterAmount>0)Ui.text(this,card,"TAKSOMETR "+money.format(o.meterAmount)+" · "+String.format(Locale.getDefault(),"%.2f km",o.meterDistanceM/1000d),10,Ui.GREEN,false);
+        if(!safe(o.passengerPhone).isEmpty())Ui.text(this,card,"SMS: "+safe(o.trackingSmsStatus)+(safe(o.trackingSmsLastError).isEmpty()?"":" · "+o.trackingSmsLastError),10,"failed".equals(o.trackingSmsStatus)?Ui.RED:Ui.MUTED,false);
+        if(full){LinearLayout a=Ui.row(this);card.addView(a);Ui.rowButton(this,a,"LINK",Ui.GREEN,v->trackingLink(o));if(o.status!=OrderStatus.COMPLETED&&o.status!=OrderStatus.CANCELLED){Ui.rowButton(this,a,"PRZYP",Ui.BLUE,v->assignOrderDialog(o));Ui.rowButton(this,a,"NAKAZ",Ui.MAGENTA,v->forceOrderDialog(o));}if(o.status!=OrderStatus.COMPLETED&&o.status!=OrderStatus.CANCELLED)Ui.button(this,card,"ANULUJ "+o.id,Ui.RED,v->confirm("Anulować "+o.id+"?",()->operatorAction(cb->operatorBackend.cancelOrder(o.id,cb))));}
+    }
+    private void trackingLink(Order o){if(!safe(o.trackingUrl).isEmpty()){copyTrackingLink(o.trackingUrl);return;}operatorBackend.trackingLink(o.id,(ok,msg)->runOnUiThread(()->{if(ok)copyTrackingLink(msg);else showMessage(msg,false);}));}
+
+    private void renderOperatorMessagesTab(){Ui.button(this,root,"NOWY KOMUNIKAT",Ui.BLUE,v->messageDialog());renderOperatorMessages();}
+
+    private void renderOperatorCrmTab(){
+        LinearLayout actions=Ui.row(this);root.addView(actions);Ui.rowButton(this,actions,"KLIENT",Ui.GREEN,v->clientDialog());Ui.rowButton(this,actions,"FIRMA",Ui.BLUE,v->companyDialog());Ui.rowButton(this,actions,"VOUCHER",Ui.ORANGE,v->voucherDialog());
+        LinearLayout c=Ui.card(this,root);Ui.header(this,c,"KLIENCI / CRM");for(OperatorClient x:operatorSnapshot.clients){Ui.text(this,c,(x.blocked?"⛔ ":"")+safe(x.name)+" · "+safe(x.phone),12,x.blocked?Ui.RED:Ui.TEXT,true);Ui.text(this,c,safe(x.email)+" · "+x.ridesCount+" kursów · "+money.format(x.totalSpend),10,Ui.MUTED,false);}if(operatorSnapshot.clients.isEmpty())Ui.text(this,c,"Brak klientów.",11,Ui.MUTED,false);
+        LinearLayout co=Ui.card(this,root);Ui.header(this,co,"FIRMY");for(OperatorCompany x:operatorSnapshot.companies){Ui.text(this,co,(x.active?"● ":"○ ")+x.name+" · NIP "+safe(x.nip),12,x.active?Ui.TEXT:Ui.MUTED,true);Ui.text(this,co,safe(x.billingEmail)+" · limit "+money.format(x.monthlyLimit),10,Ui.MUTED,false);}if(operatorSnapshot.companies.isEmpty())Ui.text(this,co,"Brak firm.",11,Ui.MUTED,false);
+        LinearLayout v=Ui.card(this,root);Ui.header(this,v,"VOUCHERY");for(OperatorVoucher x:operatorSnapshot.vouchers){Ui.text(this,v,x.code+" · "+(x.active?"AKTYWNY":"OFF"),12,x.active?Ui.GREEN:Ui.MUTED,true);Ui.text(this,v,money.format(x.amount)+" · pozostało "+money.format(x.remainingAmount),10,Ui.MUTED,false);}if(operatorSnapshot.vouchers.isEmpty())Ui.text(this,v,"Brak voucherów.",11,Ui.MUTED,false);
+    }
+    private void clientDialog(){LinearLayout box=dialogColumn();EditText n=plainField("Nazwa"),p=plainField("Telefon"),e=plainField("E-mail"),notes=plainField("Uwagi");p.setInputType(InputType.TYPE_CLASS_PHONE);box.addView(n);box.addView(p);box.addView(e);box.addView(notes);new AlertDialog.Builder(this).setTitle("Nowy klient").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.createClient(n.getText().toString(),p.getText().toString(),e.getText().toString(),notes.getText().toString(),cb))).show();}
+    private void companyDialog(){LinearLayout box=dialogColumn();EditText n=plainField("Nazwa"),nip=plainField("NIP"),e=plainField("E-mail rozliczeń"),limit=numberField("Limit miesięczny");box.addView(n);box.addView(nip);box.addView(e);box.addView(limit);new AlertDialog.Builder(this).setTitle("Nowa firma").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.createCompany(n.getText().toString(),nip.getText().toString(),e.getText().toString(),parseDouble(limit),cb))).show();}
+    private void voucherDialog(){LinearLayout box=dialogColumn();EditText code=plainField("Kod"),amount=numberField("Kwota");Spinner company=spinner(labelsCompanies()),client=spinner(labelsClients());box.addView(code);box.addView(amount);box.addView(company);box.addView(client);new AlertDialog.Builder(this).setTitle("Voucher").setView(box).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{String cid=company.getSelectedItemPosition()<=0?"":operatorSnapshot.companies.get(company.getSelectedItemPosition()-1).id;String cl=client.getSelectedItemPosition()<=0?"":operatorSnapshot.clients.get(client.getSelectedItemPosition()-1).id;operatorAction(cb->operatorBackend.createVoucher(code.getText().toString().trim().toUpperCase(Locale.ROOT),parseDouble(amount),cid,cl,cb));}).show();}
+    private String[] labelsCompanies(){ArrayList<String>x=new ArrayList<>();x.add("Firma: —");for(OperatorCompany c:operatorSnapshot.companies)x.add(c.name);return x.toArray(new String[0]);}
+    private String[] labelsClients(){ArrayList<String>x=new ArrayList<>();x.add("Klient: —");for(OperatorClient c:operatorSnapshot.clients)x.add((safe(c.name).isEmpty()?c.phone:c.name)+(safe(c.phone).isEmpty()?"":" · "+c.phone));return x.toArray(new String[0]);}
+
+    private void renderOperatorSettlementsTab(){renderOperatorSettlementSummary();LinearLayout card=Ui.card(this,root);Ui.header(this,card,"ROZLICZENIA KURSÓW");for(OperatorSettlement x:operatorSnapshot.settlements){Ui.text(this,card,x.orderId+" · "+safe(x.taxiId)+" · "+money.format(x.grossAmount),12,Ui.TEXT,true);Ui.text(this,card,safe(x.clientName).isEmpty()?safe(x.companyName):x.clientName+" · "+x.paymentMethod+" · "+x.status,10,Ui.MUTED,false);if(!"settled".equals(x.status))Ui.button(this,card,"ROZLICZ "+x.orderId,Ui.GREEN,v->confirm("Zamknąć rozliczenie "+x.orderId+"?",()->operatorAction(cb->operatorBackend.closeSettlement(x.id,cb))));}if(operatorSnapshot.settlements.isEmpty())Ui.text(this,card,"Brak rozliczeń.",11,Ui.MUTED,false);}
+    private void renderOperatorHistoryTab(){LinearLayout card=Ui.card(this,root);Ui.header(this,card,"AUDYT / HISTORIA SYSTEMU");for(OperatorAuditEntry x:operatorSnapshot.audit){Ui.text(this,card,(x.createdAt>0?new SimpleDateFormat("dd.MM HH:mm",Locale.getDefault()).format(new Date(x.createdAt))+" · ":"")+x.action,11,Ui.TEXT,true);Ui.text(this,card,x.entityType+" "+x.entityId+(safe(x.details).isEmpty()?"":" · "+x.details),9,Ui.MUTED,false);}if(operatorSnapshot.audit.isEmpty())Ui.text(this,card,"Brak wpisów audytu.",11,Ui.MUTED,false);}
+
+    private void renderOperatorAdminTab(){
+        LinearLayout actions=Ui.row(this);root.addView(actions);Ui.rowButton(this,actions,"KONTO",Ui.GREEN,v->createUserDialog());Ui.rowButton(this,actions,"TARYFA",Ui.BLUE,v->tariffDialog());Ui.rowButton(this,actions,"REGION",Ui.ORANGE,v->regionDialog());Ui.rowButton(this,actions,"STREFA",Ui.MAGENTA,v->zoneDialog());
+        LinearLayout users=Ui.card(this,root);Ui.header(this,users,"KONTA");for(UserAccount u:operatorSnapshot.users){Ui.text(this,users,(u.enabled?"● ":"○ ")+safe(u.name)+" · "+u.email,12,u.enabled?Ui.TEXT:Ui.MUTED,true);Ui.text(this,users,String.join("/",u.roles),10,Ui.MUTED,false);Ui.button(this,users,u.enabled?"BLOKUJ":"ODBLOKUJ",u.enabled?Ui.RED:Ui.GREEN,v->operatorAction(cb->operatorBackend.setUserEnabled(u.id,!u.enabled,cb)));}
+        LinearLayout cfg=Ui.card(this,root);Ui.header(this,cfg,"KONFIGURACJA");Ui.text(this,cfg,"Taryfy: "+operatorSnapshot.tariffs.size()+" · Regiony: "+operatorSnapshot.regions.size()+" · Strefy: "+operatorSnapshot.fareZones.size(),12,Ui.TEXT,true);for(Tariff t:operatorSnapshot.tariffs)Ui.text(this,cfg,t.id+" · "+t.name+" · "+money.format(t.pricePerKm)+"/km",10,Ui.MUTED,false);for(Region r:operatorSnapshot.regions)Ui.text(this,cfg,r.numericCode+" → "+r.id+" · "+r.name,10,Ui.MUTED,false);
+    }
+
+    private void renderOperatorMapTab(){
+        LinearLayout card=Ui.card(this,root);Ui.header(this,card,"MAPA FLOTY NA ŻYWO");
+        WebView web=new WebView(this);web.setBackgroundColor(Color.BLACK);WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);
+        StringBuilder markers=new StringBuilder();for(OperatorDriver d:operatorSnapshot.drivers){if(Double.isNaN(d.lat)||Double.isNaN(d.lng))continue;if(markers.length()>0)markers.append(',');markers.append("{").append("lat:").append(d.lat).append(",lng:").append(d.lng).append(",name:").append(js(safe(d.taxiId)+" · "+safe(d.status))).append("}");}
+        String html="<!doctype html><html><head><meta name=viewport content='width=device-width,initial-scale=1'><link rel=stylesheet href='https://wolftaxi.starcore.pl/track-static/leaflet/leaflet.css'><style>html,body,#map{height:100%;margin:0;background:#000}</style></head><body><div id=map></div><script src='https://wolftaxi.starcore.pl/track-static/leaflet/leaflet.js'></script><script>const p=["+markers+"];const m=L.map('map').setView([54.5189,18.5305],12);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(m);p.forEach(x=>L.marker([x.lat,x.lng]).addTo(m).bindPopup(x.name));if(p.length){m.fitBounds(p.map(x=>[x.lat,x.lng]),{padding:[30,30],maxZoom:15});}</script></body></html>";
+        web.loadDataWithBaseURL("https://wolftaxi.starcore.pl/",html,"text/html","UTF-8",null);card.addView(web,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,Ui.dp(this,520)));
+    }
+    private String js(String s){return "\""+safe(s).replace("\\","\\\\").replace("\"","\\\"").replace("\n"," ").replace("\r"," ")+"\"";}
+    private void openGeo(double lat,double lng,String label){Intent i=new Intent(Intent.ACTION_VIEW,Uri.parse("geo:"+lat+","+lng+"?q="+lat+","+lng+"("+Uri.encode(label)+")"));try{startActivity(i);}catch(Exception e){showMessage("Nie można otworzyć mapy.",false);}}
+
     private void renderOperatorAlerts(){if(operatorSnapshot.alerts.isEmpty())return;LinearLayout card=Ui.card(this,root);Ui.header(this,card,"!!! SOS / ALARMY !!!");for(SafetyAlertItem a:operatorSnapshot.alerts){Ui.text(this,card,a.taxiId+" · "+a.driverName+" · "+a.status.toUpperCase(Locale.ROOT),15,Ui.RED,true);if(!safe(a.note).isEmpty())Ui.text(this,card,a.note,12,Ui.TEXT,false);LinearLayout row=Ui.row(this);card.addView(row);if("active".equals(a.status))Ui.rowButton(this,row,"POTWIERDŹ",Ui.ORANGE,v->operatorAction(cb->operatorBackend.acknowledgeAlert(a.id,cb)));Ui.rowButton(this,row,"ZAMKNIJ",Ui.GREEN,v->operatorAction(cb->operatorBackend.closeAlert(a.id,cb)));}}
 
-    private void renderOperatorStats(){int online=0,queued=0,active=0,waiting=0;for(OperatorDriver d:operatorSnapshot.drivers){if(d.online)online++;if(d.queuePosition>0)queued++;}for(Order o:operatorSnapshot.orders){if(o.status==OrderStatus.OFFERED||o.status.isActive())active++;if(o.status==OrderStatus.SEARCHING_DRIVER||o.status==OrderStatus.NO_DRIVER)waiting++;}LinearLayout row=Ui.row(this);root.addView(row);statCard(row,"ONLINE",String.valueOf(online),Ui.GREEN);statCard(row,"KOLEJKA",String.valueOf(queued),Ui.BLUE);statCard(row,"AKTYWNE",String.valueOf(active),Ui.ORANGE);statCard(row,"OCZEKUJE",String.valueOf(waiting),Ui.RED);}
+    private void renderOperatorStats(){int online=0,free=0,queued=0,active=0,waiting=0,exchange=0;for(OperatorDriver d:operatorSnapshot.drivers){if(d.online)online++;if("available".equals(d.status)||"in_queue".equals(d.status))free++;if(d.queuePosition>0)queued++;}for(Order o:operatorSnapshot.orders){if(o.status==OrderStatus.OFFERED||o.status.isActive())active++;if(o.status==OrderStatus.SEARCHING_DRIVER||o.status==OrderStatus.NO_DRIVER)waiting++;if(o.status==OrderStatus.EXCHANGE)exchange++;}LinearLayout r1=Ui.row(this);root.addView(r1);statCard(r1,"WSZYST.",String.valueOf(operatorSnapshot.drivers.size()),Ui.TEXT);statCard(r1,"ONLINE",String.valueOf(online),Ui.GREEN);statCard(r1,"WOLNYCH",String.valueOf(free),Ui.GREEN);LinearLayout r2=Ui.row(this);root.addView(r2);statCard(r2,"KOLEJKA",String.valueOf(queued),Ui.BLUE);statCard(r2,"W KURSIE",String.valueOf(active),Ui.ORANGE);statCard(r2,"OCZ./GIEŁDA",String.valueOf(waiting+exchange),Ui.RED);}
     private void statCard(LinearLayout row,String label,String value,int color){LinearLayout c=compactCard(row);Ui.text(this,c,label,10,Ui.MUTED,true);Ui.text(this,c,value,25,color,true);}
     private void renderOperatorActions(){LinearLayout row=Ui.row(this);root.addView(row);Ui.rowButton(this,row,"NOWE ZLECENIE",Ui.GREEN,v->newOrderDialog());Ui.rowButton(this,row,"KOMUNIKAT",Ui.BLUE,v->messageDialog());if(mode==AppMode.ADMIN)Ui.rowButton(this,row,"ADMIN",Ui.ORANGE,v->adminMenu());}
     private void renderOperatorDrivers(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"TAXI",13,Ui.MUTED,true);if(operatorSnapshot.drivers.isEmpty()){Ui.text(this,card,"Brak kierowców.",13,Ui.MUTED,false);return;}for(OperatorDriver d:operatorSnapshot.drivers){LinearLayout row=Ui.row(this);card.addView(row);LinearLayout left=Ui.column(this);row.addView(left,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));Ui.text(this,left,safe(d.taxiId)+" · "+safe(d.name),15,Ui.TEXT,true);String meta=(d.online?"online":"offline")+" · "+d.status+" · "+(d.queueRegionId.isEmpty()?safe(d.currentRegionId):d.queueRegionId)+(d.queuePosition>0?" "+d.queuePosition+"/"+d.queueSize:"");if(!safe(d.targetRegionId).isEmpty())meta+=" → "+d.targetRegionId;Ui.text(this,left,meta,12,d.online?Ui.GREEN:Ui.MUTED,false);TextView t=Ui.text(this,row,safe(d.currentTariffId),12,Ui.MUTED,true);t.setGravity(Gravity.END);}}
@@ -671,10 +774,22 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private int orderColor(OrderStatus s){if(s==OrderStatus.NO_DRIVER||s==OrderStatus.CANCELLED)return Ui.RED;if(s==OrderStatus.OFFERED||s==OrderStatus.SEARCHING_DRIVER)return Ui.ORANGE;if(s.isActive())return Ui.BLUE;return Ui.MUTED;}
 
     private void newOrderDialog(){if(operatorSnapshot==null)return;
-        ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);EditText pickup=plainField("Adres podstawienia");EditText destination=plainField("Adres docelowy");EditText passengerName=plainField("Klient");EditText passengerPhone=plainField("Telefon klienta, np. 500600700");passengerPhone.setInputType(InputType.TYPE_CLASS_PHONE);box.addView(pickup);box.addView(destination);box.addView(passengerName);box.addView(passengerPhone);
-        Spinner regions=spinner(labelsRegions());Spinner tariffs=spinner(labelsTariffs());Spinner mode=spinner(new String[]{"Automat / kolejka","Giełda"});box.addView(regions);box.addView(tariffs);box.addView(mode);
-        EditText passengers=numberField("Liczba pasażerów");passengers.setText("1");CheckBox luggage=new CheckBox(this),pet=new CheckBox(this),english=new CheckBox(this),mine=new CheckBox(this);luggage.setText("Bagaż");pet.setText("Zwierzę");english.setText("Wymagany angielski");mine.setText("Oznacz jako ryzykowne / mina");for(CheckBox c:new CheckBox[]{luggage,pet,english,mine}){c.setTextColor(Ui.TEXT);box.addView(c);}box.addView(passengers);
-        new AlertDialog.Builder(this).setTitle("Nowe zlecenie").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{String region=regions.getSelectedItemPosition()<=0?"":operatorSnapshot.regions.get(regions.getSelectedItemPosition()-1).id;String tariff=tariffs.getSelectedItemPosition()<=0?"":operatorSnapshot.tariffs.get(tariffs.getSelectedItemPosition()-1).id;int pc=1;try{pc=Integer.parseInt(passengers.getText().toString());}catch(Exception ignored){}final int count=Math.max(1,pc);String dm=mode.getSelectedItemPosition()==1?"exchange":"queue";operatorAction(cb->operatorBackend.createOrderAdvanced(pickup.getText().toString(),destination.getText().toString(),region,tariff,dm,count,luggage.isChecked(),pet.isChecked(),english.isChecked(),mine.isChecked(),0,passengerName.getText().toString(),passengerPhone.getText().toString(),cb));}).show();}
+        ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);
+        EditText pickup=plainField("Podstawienie"),destination=plainField("Cel"),passengerName=plainField("Klient"),passengerPhone=plainField("Telefon"),scheduled=plainField("Termin YYYY-MM-DD HH:mm"),voucher=plainField("Voucher"),costCenter=plainField("Centrum kosztów"),bookingRef=plainField("Rezerwacja / ref."),notes=plainField("Uwagi");
+        passengerPhone.setInputType(InputType.TYPE_CLASS_PHONE);EditText passengers=numberField("Pasażerowie"),estimated=numberField("Kwota orientacyjna");passengers.setText("1");
+        Spinner regions=spinner(labelsRegions()),tariffs=spinner(labelsTariffs()),dispatch=spinner(new String[]{"KOLEJKA / AUTOMAT","GIEŁDA"}),source=spinner(new String[]{"DYSP.","TELEFON","APLIKACJA","HOTEL/FIRMA"}),client=spinner(labelsClients()),company=spinner(labelsCompanies());
+        box.addView(pickup);box.addView(destination);box.addView(regions);box.addView(tariffs);box.addView(dispatch);box.addView(scheduled);box.addView(source);box.addView(passengerName);box.addView(passengerPhone);box.addView(client);box.addView(company);box.addView(voucher);box.addView(costCenter);box.addView(bookingRef);box.addView(passengers);box.addView(estimated);
+        CheckBox card=new CheckBox(this),luggage=new CheckBox(this),pet=new CheckBox(this),english=new CheckBox(this),mine=new CheckBox(this);card.setText("KARTA");luggage.setText("BAGAŻ");pet.setText("ZWIERZĘ");english.setText("ANGIELSKI");mine.setText("MINA / RYZYKO");for(CheckBox c:new CheckBox[]{card,luggage,pet,english,mine}){c.setTextColor(Ui.TEXT);box.addView(c);}box.addView(notes);
+        new AlertDialog.Builder(this).setTitle("Nowe zlecenie").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ / WYDAJ",(d,w)->{
+            String region=regions.getSelectedItemPosition()<=0?"":operatorSnapshot.regions.get(regions.getSelectedItemPosition()-1).id;
+            String tariff=tariffs.getSelectedItemPosition()<=0?"":operatorSnapshot.tariffs.get(tariffs.getSelectedItemPosition()-1).id;
+            String clientId=client.getSelectedItemPosition()<=0?"":operatorSnapshot.clients.get(client.getSelectedItemPosition()-1).id;
+            String companyId=company.getSelectedItemPosition()<=0?"":operatorSnapshot.companies.get(company.getSelectedItemPosition()-1).id;
+            int pc=Math.max(1,(int)parseDouble(passengers));String dm=dispatch.getSelectedItemPosition()==1?"exchange":"queue";String[] sources={"dispatch","phone","app","hotel"};long when=parseDateTime(scheduled.getText().toString());
+            operatorAction(cb->operatorBackend.createOrderFull(pickup.getText().toString(),destination.getText().toString(),region,tariff,dm,sources[source.getSelectedItemPosition()],when,passengerName.getText().toString(),passengerPhone.getText().toString(),clientId,companyId,voucher.getText().toString(),costCenter.getText().toString(),bookingRef.getText().toString(),pc,parseDouble(estimated),card.isChecked(),luggage.isChecked(),pet.isChecked(),english.isChecked(),mine.isChecked(),notes.getText().toString(),cb));
+        }).show();
+    }
+    private long parseDateTime(String value){String x=safe(value).trim();if(x.isEmpty())return 0;try{return new SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.getDefault()).parse(x).getTime();}catch(Exception e){return 0;}}
     private String[] labelsRegions(){ArrayList<String>x=new ArrayList<>();x.add("Region: automatycznie / brak");for(Region r:operatorSnapshot.regions)x.add((r.shortName.isEmpty()?r.id:r.shortName)+" · "+r.name);return x.toArray(new String[0]);}
     private String[] labelsTariffs(){ArrayList<String>x=new ArrayList<>();x.add("Taryfa: domyślna");for(Tariff t:operatorSnapshot.tariffs)x.add(t.shortName+" · "+t.name);return x.toArray(new String[0]);}
     private Spinner spinner(String[] values){Spinner s=new Spinner(this);ArrayAdapter<String>a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,values);s.setAdapter(a);return s;}
@@ -684,7 +799,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private void messageDialog(){
         LinearLayout box=dialogColumn();
         EditText title=plainField("Tytuł");EditText body=plainField("Treść");body.setSingleLine(false);body.setMinLines(3);
-        Spinner type=spinner(new String[]{"Informacja","Ostrzeżenie","Pilny","Pytanie TAK/NIE"});
+        Spinner type=spinner(new String[]{"Informacja","Ostrzeżenie","Pilny","System","Pytanie TAK/NIE"});
         ArrayList<String> recipientLabels=new ArrayList<>();ArrayList<String> recipientTypes=new ArrayList<>();ArrayList<String> recipientIds=new ArrayList<>();
         recipientLabels.add("WSZYSCY");recipientTypes.add("all");recipientIds.add("");
         for(OperatorDriver d:operatorSnapshot.drivers){if(!d.enabled)continue;recipientLabels.add("KIEROWCA · "+safe(d.taxiId)+" · "+safe(d.name));recipientTypes.add("driver");recipientIds.add(d.id);}
@@ -694,14 +809,14 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         box.addView(title);box.addView(body);box.addView(type);box.addView(recipient);box.addView(ack);box.addView(voice);
         new AlertDialog.Builder(this).setTitle("Komunikat do kierowców").setView(box).setNegativeButton("Wróć",null).setPositiveButton("WYŚLIJ",(d,w)->{
             int ri=recipient.getSelectedItemPosition();String tt=recipientTypes.get(ri);String tid=recipientIds.get(ri);
-            String mt=type.getSelectedItemPosition()==1?"warning":(type.getSelectedItemPosition()==2?"urgent":(type.getSelectedItemPosition()==3?"question":"info"));
+            int ti=type.getSelectedItemPosition();String mt=ti==1?"warning":(ti==2?"urgent":(ti==3?"system":(ti==4?"question":"info")));
             operatorAction(cb->operatorBackend.sendMessage(title.getText().toString(),body.getText().toString(),mt,tt,tid,ack.isChecked(),voice.isChecked(),cb));
         }).show();
     }
     private void adminMenu(){new AlertDialog.Builder(this).setTitle("Administracja").setItems(new String[]{"Nowe konto","Nowa / zmień taryfę","Nowy / zmień region","Nowa / zmień strefę"},(d,w)->{if(w==0)createUserDialog();else if(w==1)tariffDialog();else if(w==2)regionDialog();else zoneDialog();}).show();}
     private void createUserDialog(){ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);EditText email=field("E-mail",false),name=plainField("Nazwa"),password=field("Hasło",true),taxi=plainField("ID taxi, np. TX2"),number=numberField("Numer taxi");CheckBox driver=new CheckBox(this),dispatcher=new CheckBox(this),admin=new CheckBox(this),smsGateway=new CheckBox(this);driver.setText("Kierowca");dispatcher.setText("Dyspozytor");admin.setText("Administrator");smsGateway.setText("Bramka SMS");driver.setTextColor(Ui.TEXT);dispatcher.setTextColor(Ui.TEXT);admin.setTextColor(Ui.TEXT);smsGateway.setTextColor(Ui.TEXT);box.addView(email);box.addView(name);box.addView(password);box.addView(driver);box.addView(dispatcher);box.addView(admin);box.addView(smsGateway);box.addView(taxi);box.addView(number);new AlertDialog.Builder(this).setTitle("Nowe konto").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{int n=0;try{n=Integer.parseInt(number.getText().toString().trim());}catch(Exception ignored){}final int taxiNumber=n;operatorAction(cb->operatorBackend.createUser(email.getText().toString(),name.getText().toString(),password.getText().toString(),driver.isChecked(),dispatcher.isChecked(),admin.isChecked(),smsGateway.isChecked(),taxi.getText().toString(),taxiNumber,cb));}).show();}
     private void tariffDialog(){LinearLayout box=dialogColumn();EditText id=plainField("ID, np. T3"),name=plainField("Nazwa"),start=numberField("Opłata startowa"),km=numberField("Cena / km");box.addView(id);box.addView(name);box.addView(start);box.addView(km);new AlertDialog.Builder(this).setTitle("Taryfa").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.saveTariff(id.getText().toString().trim().toUpperCase(),name.getText().toString(),parseDouble(start),parseDouble(km),cb))).show();}
-    private void regionDialog(){LinearLayout box=dialogColumn();EditText id=plainField("ID, np. R2"),name=plainField("Nazwa"),priority=numberField("Priorytet");box.addView(id);box.addView(name);box.addView(priority);new AlertDialog.Builder(this).setTitle("Region").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.saveRegion(id.getText().toString().trim().toUpperCase(),name.getText().toString(),(int)parseDouble(priority),cb))).show();}
+    private void regionDialog(){LinearLayout box=dialogColumn();EditText id=plainField("ID, np. R21"),code=plainField("Kod numeryczny, np. 21"),name=plainField("Nazwa"),priority=numberField("Priorytet");box.addView(id);box.addView(code);box.addView(name);box.addView(priority);new AlertDialog.Builder(this).setTitle("Region").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.saveRegion(id.getText().toString().trim().toUpperCase(),code.getText().toString().trim(),name.getText().toString(),(int)parseDouble(priority),cb))).show();}
     private void zoneDialog(){LinearLayout box=dialogColumn();EditText id=plainField("ID, np. S2"),name=plainField("Nazwa"),tariff=plainField("Domyślna taryfa, np. T2");box.addView(id);box.addView(name);box.addView(tariff);new AlertDialog.Builder(this).setTitle("Strefa taryfowa").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.saveZone(id.getText().toString().trim().toUpperCase(),name.getText().toString(),tariff.getText().toString().trim().toUpperCase(),cb))).show();}
     private double parseDouble(EditText input){try{return Double.parseDouble(input.getText().toString().replace(',','.').trim());}catch(Exception e){return 0;}}
 

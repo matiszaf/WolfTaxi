@@ -51,6 +51,30 @@ public final class OperatorBackend {
         put(body,"dispatchMode",dispatchMode); put(body,"passengerName",passengerName); put(body,"passengerPhone",passengerPhone); put(body,"passengerCount",passengers); put(body,"luggage",luggage); put(body,"pet",pet); put(body,"englishRequired",englishRequired); put(body,"mineWarning",mineWarning); if(scheduledFor>0)put(body,"scheduledFor",new java.util.Date(scheduledFor).toInstant().toString());
         action("/api/v1/dispatch/orders", body, cb);
     }
+
+    public void createOrderFull(String pickup,String destination,String regionId,String tariffId,String dispatchMode,String source,long scheduledFor,
+                                String passengerName,String passengerPhone,String clientId,String companyId,String voucherCode,String costCenter,String bookingRef,
+                                int passengers,double estimatedPrice,boolean cardRequired,boolean luggage,boolean pet,boolean englishRequired,boolean mineWarning,
+                                String notes,ActionCallback cb) {
+        JSONObject body=new JSONObject();
+        put(body,"pickupAddress",pickup);put(body,"destinationAddress",destination);put(body,"pickupRegionId",regionId);put(body,"tariffId",tariffId);
+        put(body,"dispatchMode",dispatchMode);put(body,"source",source);if(scheduledFor>0)put(body,"scheduledFor",new java.util.Date(scheduledFor).toInstant().toString());
+        put(body,"passengerName",passengerName);put(body,"passengerPhone",passengerPhone);put(body,"clientId",clientId);put(body,"companyId",companyId);
+        put(body,"voucherCode",voucherCode);put(body,"costCenter",costCenter);put(body,"bookingRef",bookingRef);put(body,"passengerCount",passengers);
+        put(body,"estimatedPrice",estimatedPrice);put(body,"cardRequired",cardRequired);put(body,"luggage",luggage);put(body,"pet",pet);
+        put(body,"englishRequired",englishRequired);put(body,"mineWarning",mineWarning);put(body,"cashless",!companyId.isEmpty()||!voucherCode.isEmpty());put(body,"notes",notes);
+        action("/api/v1/dispatch/orders",body,cb);
+    }
+    public void createClient(String name,String phone,String email,String notes,ActionCallback cb){JSONObject b=new JSONObject();put(b,"name",name);put(b,"phone",phone);put(b,"email",email);put(b,"notes",notes);action("/api/v1/dispatch/clients",b,cb);}
+    public void createCompany(String name,String nip,String billingEmail,double monthlyLimit,ActionCallback cb){JSONObject b=new JSONObject();put(b,"name",name);put(b,"nip",nip);put(b,"billingEmail",billingEmail);put(b,"monthlyLimit",monthlyLimit);action("/api/v1/dispatch/companies",b,cb);}
+    public void createVoucher(String code,double amount,String companyId,String clientId,ActionCallback cb){JSONObject b=new JSONObject();put(b,"code",code);put(b,"amount",amount);put(b,"companyId",companyId);put(b,"clientId",clientId);action("/api/v1/dispatch/vouchers",b,cb);}
+    public void closeSettlement(String id,ActionCallback cb){action("/api/v1/dispatch/settlements/"+id+"/close",new JSONObject(),cb);}
+    public void setQueuePriority(String driverId,int priority,ActionCallback cb){JSONObject b=new JSONObject();put(b,"priority",priority);action("/api/v1/dispatch/drivers/"+driverId+"/queue-priority",b,cb);}
+    public void trackingLink(String orderId,ActionCallback cb){
+        if(!session.hasSession()){cb.complete(false,"Sesja wygasła.");return;}
+        io.execute(()->{try{JSONObject j=OracleApi.post("/api/v1/dispatch/orders/"+orderId+"/tracking-link",session.token(),new JSONObject());String url=j.optString("trackingUrl","");cb.complete(!url.isEmpty(),url.isEmpty()?j.optString("message","Brak linku śledzenia."):url);refreshBlocking();}catch(Exception e){cb.complete(false,readable(e));}});
+    }
+
     public void assignOrder(String orderId, String driverId, ActionCallback cb) { action("/api/v1/dispatch/orders/"+orderId+"/assign", body("driverId",driverId), cb); }
     public void cancelOrder(String orderId, ActionCallback cb) { action("/api/v1/dispatch/orders/"+orderId+"/cancel", new JSONObject(), cb); }
     public void forceOrder(String orderId, String driverId, ActionCallback cb) { action("/api/v1/dispatch/orders/"+orderId+"/force", body("driverId",driverId), cb); }
@@ -69,7 +93,7 @@ public final class OperatorBackend {
     }
     public void setUserEnabled(String userId, boolean enabled, ActionCallback cb){JSONObject body=new JSONObject();put(body,"enabled",enabled);action("/api/v1/admin/users/"+userId+"/enabled",body,cb);}
     public void saveTariff(String id,String name,double startFee,double pricePerKm,ActionCallback cb){JSONObject body=new JSONObject();put(body,"name",name);put(body,"shortName",id);put(body,"startFee",startFee);put(body,"pricePerKm",pricePerKm);put(body,"active",true);action("/api/v1/admin/tariffs/"+id,body,cb);}
-    public void saveRegion(String id,String name,int priority,ActionCallback cb){JSONObject body=new JSONObject();put(body,"name",name);put(body,"shortName",id);put(body,"priority",priority);put(body,"active",true);put(body,"queueEnabled",true);action("/api/v1/admin/regions/"+id,body,cb);}
+    public void saveRegion(String id,String numericCode,String name,int priority,ActionCallback cb){JSONObject body=new JSONObject();put(body,"name",name);put(body,"shortName",id);put(body,"numericCode",numericCode);put(body,"priority",priority);put(body,"active",true);put(body,"queueEnabled",true);action("/api/v1/admin/regions/"+id,body,cb);}
     public void saveZone(String id,String name,String tariffId,ActionCallback cb){JSONObject body=new JSONObject();put(body,"name",name);put(body,"defaultTariffId",tariffId);put(body,"multiplier",1);put(body,"active",true);action("/api/v1/admin/fare-zones/"+id,body,cb);}
 
     private void action(String path, JSONObject body, ActionCallback cb) {

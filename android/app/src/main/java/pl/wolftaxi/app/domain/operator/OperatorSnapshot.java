@@ -16,6 +16,11 @@ public final class OperatorSnapshot {
     public ArrayList<DispatchMessage> messages = new ArrayList<>();
     public ArrayList<UserAccount> users = new ArrayList<>();
     public ArrayList<SafetyAlertItem> alerts = new ArrayList<>();
+    public ArrayList<OperatorClient> clients = new ArrayList<>();
+    public ArrayList<OperatorCompany> companies = new ArrayList<>();
+    public ArrayList<OperatorVoucher> vouchers = new ArrayList<>();
+    public ArrayList<OperatorSettlement> settlements = new ArrayList<>();
+    public ArrayList<OperatorAuditEntry> audit = new ArrayList<>();
     public boolean connected = true;
     public long generatedAt = 0;
     public int todayRides = 0;

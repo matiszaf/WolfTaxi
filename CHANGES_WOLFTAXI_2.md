@@ -1,19 +1,15 @@
-# WolfTaxi 0.8.3 — zmiany
+# WolfTaxi 0.9 — FULL PANEL APP
 
-- `OK` oznacza wyłącznie bieżący rejon.
-- `KURSEM` i `DOJAZD` z wpisanym kodem oznaczają rejon docelowy.
-- Aktywny kurs nie blokuje ustawiania bieżącego rejonu.
-- Dodano endpoint `POST /api/v1/driver/region/current`.
-- Bieżący i docelowy rejon są utrzymywane niezależnie.
-- Dołączenie do kolejki po `OK` następuje wyłącznie w dozwolonym statusie.
-- Osiągnięcie celu (`current == target`) automatycznie czyści cel.
-- Dodano zdarzenia `region.current` i `target.reached` oraz wpisy audytu.
-- Wygląd panelu REJONY nie został zmieniony.
-
-
-### 0.8.4
-- trwała bramka SMS niezależna od aktywnego trybu UI
-- foreground service pozostaje aktywny po zmianie trybu
-- automatyczny restart po BOOT_COMPLETED
-- flaga enabled nie jest zerowana przez systemowe zniszczenie usługi
-- stopWithTask=false
+- przeniesiono funkcje panelu WEB dyspozytora/admina do aplikacji Android,
+- dodano zakładki DYSPO, ZLEC., KIER., MAPA, KOMUN., CRM, ROZL., HIST. i ADMIN,
+- dodano pełny formularz tworzenia zlecenia,
+- dodano przypisywanie, nakazy, anulowanie i link trackingowy,
+- dodano zarządzanie priorytetami kierowców,
+- dodano obsługę alarmów SOS z potwierdzaniem i zamykaniem,
+- dodano komunikację do wszystkich/kierowcy/rejonu wraz z pytaniami TAK/NIE, ACK i TTS,
+- dodano klientów, firmy i vouchery,
+- dodano rozliczenia i audyt,
+- dodano administrację kontami, taryfami, regionami i strefami,
+- dodano mapę floty LIVE wewnątrz aplikacji,
+- zachowano dotychczasowy wygląd terminala kierowcy oraz ekran REJONY,
+- zachowano działającą w tle bramkę SMS i stały podpis APK.

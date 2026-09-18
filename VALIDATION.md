@@ -1,19 +1,13 @@
-# Walidacja 0.8.3
+# Walidacja WolfTaxi 0.9
 
 Sprawdzone przed spakowaniem:
-- `node --check` dla backendu,
-- endpoint bieżącego rejonu istnieje w backendzie,
-- Android Backend/OracleBackend/DemoBackend mają `setCurrentRegion`,
-- `KOD + OK` używa `setCurrentRegion`,
-- `KURSEM` i `DOJAZD` nadal korzystają z `setStatusForRegion`,
-- panel REJONY zachowuje dotychczasowy layout,
-- automatyka tracking/SMS pozostaje w paczce,
-- finalny compile APK wykonuje GitHub Actions z tym samym stałym podpisem.
+- składnia Java: brak błędów parsera w źródłach aplikacji; pełny compile Android wykonuje GitHub Actions,
+- `node --check` dla plików backendu JS,
+- `bash -n` dla skryptów instalacyjnych i pomocniczych,
+- zgodność funkcji aplikacji z akcjami panelu WEB: zlecenia, kierowcy, komunikacja, CRM, rozliczenia, audyt, admin i mapa,
+- OperatorSnapshot mapuje kierowców, zlecenia, regiony, taryfy, strefy, komunikaty, użytkowników, SOS, klientów, firmy, vouchery, rozliczenia i audyt,
+- zachowany applicationId `pl.wolftaxi.app`,
+- workflow nadal buduje podpisany release APK ze stałym certyfikatem,
+- ekran kierowcy REJONY nie został przebudowany.
 
-
-## 0.8.4 checks
-- tryb SMS -> Kierowca nie wywołuje stopSmsGateway
-- ręczne WYŁĄCZ ustawia enabled=false i zatrzymuje usługę
-- logout zatrzymuje usługę
-- BootReceiver wymaga enabled + aktywnej sesji + roli sms_gateway + SEND_SMS
-- usługa ma START_STICKY oraz stopWithTask=false
+Finalny test kompilacji APK jest wykonywany przez GitHub Actions z Android SDK 35.
