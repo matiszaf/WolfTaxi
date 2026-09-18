@@ -32,7 +32,12 @@ function mapOrder(row) {
     mineWarning: !!row.mine_warning, requirements: row.requirements || {}, cancelledReason: text(row.cancelled_reason),
     clientId: row.client_id == null ? '' : text(row.client_id), companyId: row.company_id == null ? '' : text(row.company_id),
     voucherCode: text(row.voucher_code), costCenter: text(row.cost_center), bookingRef: text(row.booking_ref),
-    settlementStatus: text(row.settlement_status || 'open'), cashless: !!row.cashless
+    settlementStatus: text(row.settlement_status || 'open'), cashless: !!row.cashless,
+    trackingToken: text(row.tracking_token),
+    trackingUrl: row.tracking_token ? `${String(process.env.PUBLIC_BASE_URL || 'https://wolftaxi.starcore.pl').replace(/\/$/,'')}/track/${encodeURIComponent(String(row.tracking_token))}` : '',
+    meterActive: !!row.meter_active, meterStartedAt: ms(row.meter_started_at),
+    meterDistanceM: Number(row.meter_distance_m || 0), meterWaitingSeconds: Number(row.meter_waiting_seconds || 0),
+    meterAmount: Number(row.meter_amount || 0), meterUpdatedAt: ms(row.meter_updated_at)
   };
 }
 

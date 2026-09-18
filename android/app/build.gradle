@@ -14,7 +14,7 @@ def apiBaseUrl = localProps.getProperty('wolftaxi.apiUrl', '').trim()
 def escapedApiBaseUrl = apiBaseUrl.replace('\\', '\\\\').replace('"', '\\"')
 
 def versionCodeFromEnv = System.getenv('WOLFTAXI_VERSION_CODE') ?: '5'
-def versionNameFromEnv = System.getenv('WOLFTAXI_VERSION_NAME') ?: '0.6.0-full-rt3000'
+def versionNameFromEnv = System.getenv('WOLFTAXI_VERSION_NAME') ?: '0.7.0-taximeter-live-tracking'
 
 def releaseKeystorePath = System.getenv('WOLFTAXI_KEYSTORE_PATH') ?: ''
 def releaseStorePassword = System.getenv('WOLFTAXI_KEYSTORE_PASSWORD') ?: ''

@@ -168,6 +168,7 @@ public final class SnapshotMapper {
         out.dispatchMode = json.optString("dispatchMode", "queue");
         out.source = json.optString("source", "dispatch");
         out.clientId = json.optString("clientId", ""); out.companyId = json.optString("companyId", ""); out.voucherCode = json.optString("voucherCode", ""); out.costCenter = json.optString("costCenter", ""); out.bookingRef = json.optString("bookingRef", ""); out.settlementStatus = json.optString("settlementStatus", "open"); out.cashless = json.optBoolean("cashless", false);
+        out.trackingUrl = json.optString("trackingUrl", ""); out.meterActive = json.optBoolean("meterActive", false); out.meterStartedAt = json.optLong("meterStartedAt", 0); out.meterDistanceM = json.optDouble("meterDistanceM", 0); out.meterWaitingSeconds = json.optDouble("meterWaitingSeconds", 0); out.meterAmount = json.optDouble("meterAmount", 0); out.meterUpdatedAt = json.optLong("meterUpdatedAt", 0);
         out.scheduledFor = json.optLong("scheduledFor", 0);
         out.estimatedPrice = json.optDouble("estimatedPrice", 0);
         out.finalPrice = json.optDouble("finalPrice", 0);

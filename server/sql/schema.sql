@@ -339,3 +339,18 @@ DO $$ BEGIN
     ALTER TABLE orders ADD CONSTRAINT orders_company_id_fkey FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE SET NULL;
   END IF;
 END $$;
+
+-- WolfTaxi 0.7 TAXIMETER + LIVE TRACKING --------------------------------------
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_token text;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_enabled boolean NOT NULL DEFAULT true;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_expires_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_active boolean NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_started_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_last_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_last_lat double precision;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_last_lng double precision;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_distance_m double precision NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_waiting_seconds double precision NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_amount numeric(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_updated_at timestamptz;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_tracking_token ON orders(tracking_token) WHERE tracking_token IS NOT NULL AND tracking_token<>'';

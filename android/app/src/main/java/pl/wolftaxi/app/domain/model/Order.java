@@ -32,6 +32,13 @@ public class Order {
     public String bookingRef = "";
     public String settlementStatus = "open";
     public boolean cashless = false;
+    public String trackingUrl = "";
+    public boolean meterActive = false;
+    public long meterStartedAt = 0;
+    public double meterDistanceM = 0;
+    public double meterWaitingSeconds = 0;
+    public double meterAmount = 0;
+    public long meterUpdatedAt = 0;
     public long scheduledFor = 0;
     public double estimatedPrice = 0;
     public double finalPrice = 0;

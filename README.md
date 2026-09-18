@@ -1,4 +1,4 @@
-# WolfTaxi 0.6 FULL RT3000
+# WolfTaxi 0.7 TAXIMETER + LIVE TRACKING
 
 Duży release integracyjny WolfTaxi. Łączy terminal kierowcy, centralę WWW, dyspozytornię w aplikacji, kolejki, priorytety, zlecenia, giełdę, nakazy, komunikację, SOS, CRM i rozliczenia na jednym backendzie Oracle/PostgreSQL.
 
@@ -25,7 +25,7 @@ Duży release integracyjny WolfTaxi. Łączy terminal kierowcy, centralę WWW, d
 
 ## Aktualizacja Oracle
 
-Rozpakuj `WolfTaxi_0.6_SERVER_ONLY.zip` i uruchom:
+Rozpakuj `WolfTaxi_0.7_SERVER_ONLY.zip` i uruchom:
 
 ```bash
 chmod +x UPDATE_ORACLE_UBUNTU.sh scripts/*.sh
@@ -38,7 +38,7 @@ Po aktualizacji:
 curl https://wolftaxi.starcore.pl/health
 ```
 
-Powinno zwrócić `"version":"0.6.0"`.
+Powinno zwrócić `"version":"0.7.0"`.
 
 ## APK
 
@@ -59,3 +59,15 @@ Wymagane sekrety GitHub pozostają te same:
 Zakładki obejmują dyspozytornię, zlecenia, kierowców, komunikację, klientów/firmy, rozliczenia, historię oraz administrację.
 
 > WolfTaxi odwzorowuje workflow, które zostały zdefiniowane dla tego projektu. Nie zakłada nieudokumentowanych zachowań zamkniętego systemu RT3000.
+
+## WolfTaxi 0.7 — taksometr, mapa LIVE i link klienta
+
+Wersja 0.7 dodaje trzy elementy kursu bez zmiany zamrożonego ekranu `REJONY`:
+
+- **Taksometr GPS** uruchamiany automatycznie przy rozpoczęciu kursu (`in_progress`). Kwota jest liczona na serwerze z opłaty startowej, kilometrów, czasu postoju i mnożnika strefy. Wartość jest widoczna w zakładce `ZLEC.` i podpowiadana przy zakończeniu kursu.
+- **Mapa LIVE** korzystająca z lokalizacji wysyłanej przez istniejący foreground service kierowcy. Centrala nadal widzi flotę na żywo, a kierowca przy aktywnym zleceniu ma przycisk `MAPA LIVE`.
+- **Publiczny link śledzenia kursu klienta** w postaci `https://wolftaxi.starcore.pl/track/<losowy-token>`. Token ma 192 bity losowości, nie wymaga logowania, nie ujawnia telefonu/nazwiska/uwag klienta i wygasa po kursie. W aplikacji jest `LINK KLIENTA`, a w panelu centrali przy zleceniu przycisk `LINK` kopiujący adres.
+
+Strona klienta pokazuje status kursu, numer taxi, adres podstawienia/cel, pozycję auta na OpenStreetMap, czas ostatniej aktualizacji oraz bieżący odczyt taksometru. Aktualizacja odbywa się co ok. 3 sekundy.
+
+> Taksometr WolfTaxi w tej wersji jest programowym licznikiem/estymatorem opartym o GPS i konfigurację taryf. Jeśli ma służyć jako prawnie wymagany taksometr do naliczania oficjalnej opłaty, trzeba osobno zweryfikować wymagania homologacyjne/fiskalne dla docelowego zastosowania.

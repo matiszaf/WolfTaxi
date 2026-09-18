@@ -1,13 +1,14 @@
-# Walidacja 0.6
+# Walidacja WolfTaxi 0.7
 
-Sprawdzone przed spakowaniem:
+Wykonane przed spakowaniem:
 
-- `npm run check` — wszystkie pliki JS backendu przechodzą `node --check`;
-- `server/public/dispatch/app.js` przechodzi `node --check`;
-- workflow GitHub Actions zachowuje stabilny podpis release i parser SHA-256;
-- wersja API: `0.6.0`;
-- wersja APK: automatycznie `0.6.<GITHUB_RUN_NUMBER>`, versionCode `600000 + run_number`;
-- ekran REJONY porównany z 0.5.4: układ i przyciski bez zmian; jedyna zmiana logiczna w tym bloku to użycie `numericCode` z serwera, jeśli istnieje;
-- seed zawiera kody 21, 23, 24, 26, 37, 39, 87, 89 i 1.
+- `node --check` dla głównych plików backendu i panelu WWW;
+- kontrola wersji API 0.7.0;
+- kontrola migracji pól `tracking_*` i `meter_*`;
+- kontrola generowania tokenów śledzenia;
+- kontrola automatycznego wygasania linku po zakończeniu/anulowaniu;
+- kontrola mapowania pól taksometru do Android `Order`;
+- kontrola zachowania workflow podpisu APK i versionCode 0.7;
+- test integralności obu archiwów ZIP.
 
-Pełny test instalacyjny Androida wykonuje GitHub Actions po pushu, ponieważ środowisko paczki nie zawiera lokalnego Android SDK.
+Finalna kompilacja APK odbywa się w GitHub Actions z Android SDK 35.

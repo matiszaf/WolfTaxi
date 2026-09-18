@@ -438,15 +438,27 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         if(order.cashless)Ui.text(this,card,"BEZGOTÓWKOWE"+(!safe(order.voucherCode).isEmpty()?" · VOUCHER "+order.voucherCode:"")+(!safe(order.costCenter).isEmpty()?" · MPK "+order.costCenter:""),11,Ui.BLUE,true);
         if(!safe(order.passengerPhone).isEmpty())Ui.text(this,card,"Kontakt: "+order.passengerPhone,11,Ui.MUTED,false);
         if(!safe(order.notes).isEmpty())Ui.text(this,card,"Uwagi: "+order.notes,11,Ui.MUTED,false);
+        if(order.meterActive || order.meterAmount>0 || order.status==OrderStatus.IN_PROGRESS){
+            LinearLayout meter=Ui.column(this);card.addView(meter);
+            Ui.text(this,meter,"TAKSOMETR",9,Ui.MUTED,true);
+            Ui.text(this,meter,money.format(order.meterAmount),28,Ui.GREEN,true);
+            String meterMeta=String.format(Locale.getDefault(),"%.2f km · postój %d min",order.meterDistanceM/1000.0,(int)Math.floor(order.meterWaitingSeconds/60.0));
+            Ui.text(this,meter,meterMeta,11,Ui.MUTED,false);
+        }
         LinearLayout utilities=Ui.row(this);card.addView(utilities);String navAddress=order.status==OrderStatus.IN_PROGRESS&&!safe(order.destinationAddress).isEmpty()?order.destinationAddress:order.pickupAddress;
         Ui.rowButton(this,utilities,"NAWIGACJA",Ui.BLUE,v->openNavigation(navAddress));if(!safe(order.passengerPhone).isEmpty())Ui.rowButton(this,utilities,"ZADZWOŃ",Ui.BLUE,v->openDialer(order.passengerPhone));
+        if(!safe(order.trackingUrl).isEmpty()){
+            LinearLayout tracking=Ui.row(this);card.addView(tracking);
+            Ui.rowButton(this,tracking,"MAPA LIVE",Ui.GREEN,v->openTrackingMap(order.trackingUrl));
+            Ui.rowButton(this,tracking,"LINK KLIENTA",Ui.ORANGE,v->copyTrackingLink(order.trackingUrl));
+        }
         OrderStatus next=nextStatus(order.status);if(next!=null)Ui.button(this,card,nextAction(next),next==OrderStatus.COMPLETED?Ui.RED:Ui.GREEN,v->nextOrderAction(order,next));
     }
 
     private void nextOrderAction(Order order,OrderStatus next){if(next==OrderStatus.COMPLETED)completeOrderDialog(order);else action(cb->backend.advanceOrder(order.id,next,cb));}
 
     private void completeOrderDialog(Order order){
-        LinearLayout box=dialogColumn();EditText price=numberField("Kwota końcowa");price.setText(String.format(Locale.US,"%.2f",order.estimatedPrice>0?order.estimatedPrice:order.finalPrice));
+        LinearLayout box=dialogColumn();EditText price=numberField("Kwota końcowa");double suggested=order.meterAmount>0?order.meterAmount:(order.estimatedPrice>0?order.estimatedPrice:order.finalPrice);price.setText(String.format(Locale.US,"%.2f",suggested));
         Spinner payment=spinner(new String[]{"Gotówka","Karta","Firma","Inna"});box.addView(price);box.addView(payment);
         new AlertDialog.Builder(this).setTitle("Zakończ kurs").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAKOŃCZ",(d,w)->{
             double amount=parseDouble(price);PaymentMethod method=new PaymentMethod[]{PaymentMethod.CASH,PaymentMethod.CARD,PaymentMethod.COMPANY,PaymentMethod.OTHER}[payment.getSelectedItemPosition()];
@@ -711,5 +723,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQUEST_LOCATION)ensureLocationService(false);}
     private void openNavigation(String address){if(safe(address).isEmpty()){showMessage("Brak adresu do nawigacji.",false);return;}Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse("geo:0,0?q="+Uri.encode(address)));try{startActivity(intent);}catch(Exception e){showMessage("Nie znaleziono aplikacji nawigacyjnej.",false);}}
     private void openDialer(String phone){Intent intent=new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+Uri.encode(phone)));try{startActivity(intent);}catch(Exception e){showMessage("Nie można otworzyć telefonu.",false);}}
+    private void openTrackingMap(String url){if(safe(url).isEmpty()){showMessage("Brak linku śledzenia.",false);return;}Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));try{startActivity(intent);}catch(Exception e){showMessage("Nie można otworzyć mapy kursu.",false);}}
+    private void copyTrackingLink(String url){if(safe(url).isEmpty()){showMessage("Brak linku śledzenia.",false);return;}android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);clipboard.setPrimaryClip(android.content.ClipData.newPlainText("WolfTaxi · śledzenie kursu",url));showMessage("Link śledzenia skopiowany.",true);}
     private String safe(String value){return value==null?"":value;}
 }

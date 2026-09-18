@@ -31,7 +31,7 @@ function attachRealtime(server) {
     clients.add(ws);
     ws.on('pong', () => { ws.isAlive = true; });
     ws.on('close', () => clients.delete(ws));
-    send(ws, 'hello', { roles: ws.wolftaxi.roles, userId: ws.wolftaxi.userId, version: '0.5.0' });
+    send(ws, 'hello', { roles: ws.wolftaxi.roles, userId: ws.wolftaxi.userId, version: '0.7.0' });
   });
 
   const heartbeat = setInterval(() => {
