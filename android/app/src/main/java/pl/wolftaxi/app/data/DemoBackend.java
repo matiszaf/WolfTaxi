@@ -124,6 +124,32 @@ public final class DemoBackend implements Backend {
         publish();
     }
 
+    @Override public void setCurrentRegion(String regionId, ActionCallback callback) {
+        if (!snapshot.driver.onShift) {
+            callback.complete(false, "Najpierw rozpocznij zmianę.");
+            return;
+        }
+        Region region = findRegion(regionId);
+        if (region == null || !region.active) {
+            callback.complete(false, "Nieznany rejon: " + regionId);
+            return;
+        }
+        snapshot.region = region;
+        snapshot.driver.currentRegionId = region.id;
+        if (region.id.equals(snapshot.driver.targetRegionId)) snapshot.driver.targetRegionId = "";
+        if (snapshot.activeOrder == null && snapshot.offer == null &&
+                (snapshot.driver.status == DriverStatus.AVAILABLE || snapshot.driver.status == DriverStatus.IN_QUEUE) && region.queueEnabled) {
+            snapshot.driver.status = DriverStatus.IN_QUEUE;
+            snapshot.queuePosition = 1;
+            snapshot.queueSize = Math.max(1, snapshot.queueSize);
+        } else {
+            snapshot.queuePosition = 0;
+            snapshot.queueSize = 0;
+        }
+        callback.complete(true, "Bieżący rejon: " + region.name);
+        publish();
+    }
+
     @Override public void joinQueue(String regionId, ActionCallback callback) {
         if (!snapshot.driver.onShift) {
             callback.complete(false, "Najpierw rozpocznij zmianę.");

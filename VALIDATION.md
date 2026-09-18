@@ -1,7 +1,11 @@
-# Walidacja 0.8.1
+# Walidacja 0.8.3
 
-1. `node --check server/src/index.js`
-2. Sprawdzenie referencji lokalnego Leaflet.
-3. Sprawdzenie automatyki SMS: `tracking`, `arrived`, `completed`.
-4. ZIP testowany przez `unzip -t`.
-5. Finalny APK buduje GitHub Actions.
+Sprawdzone przed spakowaniem:
+- `node --check` dla backendu,
+- endpoint bieżącego rejonu istnieje w backendzie,
+- Android Backend/OracleBackend/DemoBackend mają `setCurrentRegion`,
+- `KOD + OK` używa `setCurrentRegion`,
+- `KURSEM` i `DOJAZD` nadal korzystają z `setStatusForRegion`,
+- panel REJONY zachowuje dotychczasowy layout,
+- automatyka tracking/SMS pozostaje w paczce,
+- finalny compile APK wykonuje GitHub Actions z tym samym stałym podpisem.

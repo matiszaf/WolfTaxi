@@ -34,7 +34,7 @@ const ok = (res, message, extra = {}) => res.json({ ok: true, message, ...extra 
 
 app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.8.1', time: new Date().toISOString() });
+  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.8.3', time: new Date().toISOString() });
 }));
 
 // Panel WWW. Publiczny Apache może mapować /dispatch/ bezpośrednio tutaj.
@@ -211,8 +211,22 @@ app.post('/api/v1/driver/status', ...driverGuard, asyncRoute(async (req, res) =>
   await tx(async client => {
     const d = (await client.query('SELECT * FROM drivers WHERE id=$1 FOR UPDATE', [req.driverId])).rows[0];
     if (!d?.on_shift) throw statusError(409, 'Najpierw rozpocznij zmianę.');
-    const busy = await client.query("SELECT 1 FROM orders WHERE (assigned_driver_id=$1 AND status IN ('accepted','en_route','arrived','in_progress')) OR (offered_driver_id=$1 AND status='offered') LIMIT 1", [req.driverId]);
-    if (busy.rows[0]) throw statusError(409, 'Status jest sterowany przez aktywne zlecenie.');
+    const busy = await client.query("SELECT id,status FROM orders WHERE (assigned_driver_id=$1 AND status IN ('accepted','en_route','arrived','in_progress')) OR (offered_driver_id=$1 AND status='offered') ORDER BY updated_at DESC LIMIT 1", [req.driverId]);
+
+    // Aktywne zlecenie nadal steruje statusem kierowcy, ale nie blokuje już
+    // wskazania regionu docelowego z terminala. To pozwala używać kodów
+    // rejonów w trakcie kursu/dojazdu bez ingerowania w etap zlecenia.
+    if (busy.rows[0]) {
+      if (!requestedRegionId || !(status === 'course' || status === 'driving_to_pickup')) {
+        throw statusError(409, 'Status jest sterowany przez aktywne zlecenie.');
+      }
+      const region = (await client.query('SELECT id FROM regions WHERE id=$1 AND active=true', [requestedRegionId])).rows[0];
+      if (!region) throw statusError(400, 'Nieznany lub nieaktywny rejon.');
+      await client.query('UPDATE drivers SET target_region_id=$2, updated_at=now() WHERE id=$1', [req.driverId, requestedRegionId]);
+      await driverEvent(client, req.driverId, 'target.region', { targetRegionId: requestedRegionId, activeOrderId: busy.rows[0].id, requestedStatus: status });
+      await audit(client, req.userId, 'driver.target.region', 'driver', req.driverId, { targetRegionId: requestedRegionId, activeOrderId: busy.rows[0].id, requestedStatus: status });
+      return;
+    }
 
     let targetRegionId = null;
     if (requestedRegionId) {
@@ -227,7 +241,61 @@ app.post('/api/v1/driver/status', ...driverGuard, asyncRoute(async (req, res) =>
     await audit(client, req.userId, 'driver.status', 'driver', req.driverId, { status, targetRegionId });
   });
   realtime.broadcastOperators('refresh',{reason:'driver.status',driverId:req.driverId}); realtime.broadcastDrivers('refresh',{reason:'driver.status'});
-  ok(res, requestedRegionId && (status === 'course' || status === 'driving_to_pickup') ? `Status: ${status} → ${requestedRegionId}` : `Status: ${status}`);
+  ok(res, requestedRegionId && (status === 'course' || status === 'driving_to_pickup') ? `Cel rejonu: ${requestedRegionId}` : `Status: ${status}`);
+}));
+
+app.post('/api/v1/driver/region/current', ...driverGuard, asyncRoute(async (req, res) => {
+  const regionId = String(req.body?.regionId || '').trim();
+  await tx(async client => {
+    const d = (await client.query('SELECT * FROM drivers WHERE id=$1 FOR UPDATE', [req.driverId])).rows[0];
+    if (!d?.on_shift) throw statusError(409, 'Najpierw rozpocznij zmianę.');
+    const region = (await client.query('SELECT * FROM regions WHERE id=$1 AND active=true', [regionId])).rows[0];
+    if (!region) throw statusError(400, 'Nieznany lub nieaktywny rejon.');
+
+    const busy = (await client.query("SELECT id,status FROM orders WHERE (assigned_driver_id=$1 AND status IN ('accepted','en_route','arrived','in_progress')) OR (offered_driver_id=$1 AND status='offered') ORDER BY updated_at DESC LIMIT 1", [req.driverId])).rows[0];
+    const reachedTarget = !!d.target_region_id && d.target_region_id === regionId;
+
+    // OK zawsze oznacza bieżący rejon. Aktywny kurs nie blokuje tej operacji.
+    // Nie zmieniamy etapu zlecenia ani statusu kierowcy podczas kursu.
+    await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
+
+    let joinedQueue = false;
+    if (!busy && (d.status === 'available' || d.status === 'in_queue') && region.queue_enabled) {
+      let locationOk = true;
+      if (Array.isArray(region.polygon) && region.polygon.length >= 3) {
+        locationOk = !!d.last_lat && !!d.last_lng && !!d.last_location_at &&
+          (Date.now() - new Date(d.last_location_at).getTime()) <= 60000 &&
+          pointInPolygon(Number(d.last_lat), Number(d.last_lng), region.polygon);
+      }
+      if (locationOk) {
+        await client.query('INSERT INTO queue_entries(region_id,driver_id,joined_at,priority_score) VALUES($1,$2,now(),0)', [regionId, req.driverId]);
+        joinedQueue = true;
+      }
+    }
+
+    const nextStatus = joinedQueue ? 'in_queue' : d.status;
+    const nextTarget = reachedTarget ? null : d.target_region_id;
+    await client.query('UPDATE drivers SET current_region_id=$2, target_region_id=$3, status=$4, updated_at=now() WHERE id=$1', [req.driverId, regionId, nextTarget, nextStatus]);
+
+    await driverEvent(client, req.driverId, 'region.current', {
+      regionId,
+      joinedQueue,
+      activeOrderId: busy?.id || null,
+      previousRegionId: d.current_region_id || null,
+      reachedTarget
+    });
+    if (reachedTarget) await driverEvent(client, req.driverId, 'target.reached', { regionId, activeOrderId: busy?.id || null });
+    await audit(client, req.userId, 'driver.region.current', 'region', regionId, {
+      driverId:req.driverId,
+      joinedQueue,
+      activeOrderId: busy?.id || null,
+      previousRegionId: d.current_region_id || null,
+      reachedTarget
+    });
+  });
+  realtime.broadcastOperators('refresh',{reason:'driver.region.current',driverId:req.driverId,regionId});
+  realtime.broadcastDrivers('refresh',{reason:'driver.region.current'});
+  ok(res, `Bieżący rejon: ${regionId}`);
 }));
 
 app.post('/api/v1/driver/queue/join', ...driverGuard, asyncRoute(async (req, res) => {
@@ -1078,7 +1146,7 @@ async function updateMeterForLocation(client,driverId,lat,lng,speed,accuracy){
 
 const port = Math.max(1, Number(process.env.PORT || 8081));
 const host = process.env.HOST || '127.0.0.1';
-const server = app.listen(port, host, () => console.log(`[WolfTaxi] API 0.8.1 SMS AUTOMATION działa na http://${host}:${port}`));
+const server = app.listen(port, host, () => console.log(`[WolfTaxi] API 0.8.3 REGION SEMANTICS działa na http://${host}:${port}`));
 realtime.attachRealtime(server);
 
 const timer = setInterval(async () => {

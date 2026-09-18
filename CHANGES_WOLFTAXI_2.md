@@ -1,10 +1,11 @@
-# WolfTaxi 0.8.1 — automatyczne SMS
+# WolfTaxi 0.8.3 — zmiany
 
-- SMS z linkiem śledzenia po przyjęciu/przypisaniu kursu.
-- Automatyczny SMS `NA MIEJSCU` po zmianie statusu na `arrived`.
-- Automatyczny SMS po zakończeniu kursu z podziękowaniem i kwotą, jeśli jest dostępna.
-- Wiadomości są idempotentne: jeden SMS danego typu na jedno zlecenie.
-- Retry bramki pozostaje do 3 prób.
-- Tracking klienta korzysta z lokalnego Leaflet JS/CSS.
-- Instalator serwera automatycznie pobiera Leaflet i konfiguruje `/track/` oraz `/track-static/` zarówno dla HTTP, jak i SSL vhosta.
-- Ekran `REJONY` kierowcy pozostaje bez zmian.
+- `OK` oznacza wyłącznie bieżący rejon.
+- `KURSEM` i `DOJAZD` z wpisanym kodem oznaczają rejon docelowy.
+- Aktywny kurs nie blokuje ustawiania bieżącego rejonu.
+- Dodano endpoint `POST /api/v1/driver/region/current`.
+- Bieżący i docelowy rejon są utrzymywane niezależnie.
+- Dołączenie do kolejki po `OK` następuje wyłącznie w dozwolonym statusie.
+- Osiągnięcie celu (`current == target`) automatycznie czyści cel.
+- Dodano zdarzenia `region.current` i `target.reached` oraz wpisy audytu.
+- Wygląd panelu REJONY nie został zmieniony.

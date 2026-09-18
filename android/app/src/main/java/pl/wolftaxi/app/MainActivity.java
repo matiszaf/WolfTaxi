@@ -330,17 +330,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         addFunctionRow(funcs,"KURSEM",Ui.MAGENTA,v->terminalCourse(),"DOJAZD",Ui.ORANGE,v->terminalDriveToPickup());
         addFunctionRow(funcs,"WOLNY",Ui.GREEN,v->terminalStatus(DriverStatus.AVAILABLE),"PRZERWA",Ui.BLUE,v->terminalStatus(DriverStatus.BREAK));
         addFunctionRow(funcs,"ZAJĘTY",Ui.RED,v->terminalStatus(DriverStatus.BUSY),"NA MIEJSCU",Ui.ORANGE,v->terminalArrived());
-        DispatchMessage question=pendingQuestion();
-        LinearLayout yn=Ui.row(this); funcs.addView(yn);
-        Button yes=Ui.terminalButton(this,yn,"TAK",Ui.GREEN,true,v->answerQuestion(true));
-        Button no=Ui.terminalButton(this,yn,"NIE",Ui.RED,true,v->answerQuestion(false));
-        boolean hasQuestion=question!=null; yes.setEnabled(hasQuestion); no.setEnabled(hasQuestion); yes.setAlpha(hasQuestion?1f:.35f); no.setAlpha(hasQuestion?1f:.35f);
         addFunctionRow(funcs,"TARYFA",Ui.BLUE,v->chooseTariff(),"SOS",Ui.RED,v->terminalSos());
-
-        if(question!=null){
-            Ui.text(this,card,"? "+safe(question.body),12,Ui.ORANGE,true);
-            Ui.text(this,card,"Odpowiedz przyciskami TAK / NIE.",10,Ui.MUTED,false);
-        }
     }
 
     private void addKeyRow(LinearLayout keypad,String[] keys,TextView code){
@@ -365,8 +355,16 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         Region match=null;
         for(Region r:snapshot.regions){if(regionNumericCode(r).equals(regionCodeBuffer)){match=r;break;}}
         if(match==null){showMessage("Nieznany kod rejonu: "+regionCodeBuffer,false);regionCodeBuffer="";renderDriverDashboard();return;}
-        final Region selected=match; regionCodeBuffer="";
-        action(cb->backend.joinQueue(selected.id,cb));
+        final Region selected=match;
+        final String currentLabel=selected.shortName.isEmpty()?selected.name:selected.shortName;
+
+        // RT3000: OK zawsze ustawia BIEŻĄCY rejon.
+        // Nie zmienia celu KURSEM/DOJAZD i nie jest blokowane przez aktywne zlecenie.
+        // Backend sam dołącza do kolejki tylko wtedy, gdy bieżący status na to pozwala.
+        backend.setCurrentRegion(selected.id,(ok,msg)->runOnUiThread(()->{
+            if(ok){regionCodeBuffer="";showMessage("REJON: "+currentLabel,true);renderDriverDashboard();}
+            else showMessage(msg,false);
+        }));
     }
 
     private String regionNumericCode(Region r){
@@ -389,7 +387,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         Ui.text(this,card,"OK = zgłoś rejon / wejdź do kolejki   C = kasuj kod",10,Ui.GREEN,true);
         Ui.text(this,card,"KOD + KURSEM = jadę kursem do rejonu   KOD + DOJAZD = jadę do rejonu",10,Ui.ORANGE,true);
         Ui.text(this,card,"KURSEM = z pasażerem   DOJAZD = do klienta   WOLNY = gotowy",10,Ui.MUTED,false);
-        Ui.text(this,card,"PRZERWA = przerwa   ZAJĘTY = niedostępny   TAK/NIE = odpowiedź centrali",10,Ui.MUTED,false);
+        Ui.text(this,card,"PRZERWA = przerwa   ZAJĘTY = niedostępny",10,Ui.MUTED,false);
     }
 
     private RegionStat findRegionStat(String regionId){for(RegionStat r:snapshot.regionStats)if(r.id.equals(regionId))return r;return null;}
@@ -574,7 +572,10 @@ public final class MainActivity extends Activity implements BackendListener, Ope
 
     private void terminalMovingStatus(DriverStatus status){
         if(!snapshot.driver.onShift){showMessage("Najpierw rozpocznij zmianę.",false);return;}
-        if(snapshot.activeOrder!=null||snapshot.offer!=null){showMessage("Status sterowany przez aktywne zlecenie.",false);return;}
+        if(snapshot.offer!=null){showMessage("Najpierw przyjmij lub odrzuć ofertę.",false);return;}
+        if(snapshot.activeOrder!=null && regionCodeBuffer.isEmpty()){
+            showMessage("Status kursu jest sterowany przez zlecenie. Wpisz kod rejonu, aby ustawić cel.",false);return;
+        }
         if(regionCodeBuffer.isEmpty()){
             action(cb->backend.setStatus(status,cb));
             return;
@@ -602,6 +603,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
 
     private void terminalCourse(){
         if(snapshot.activeOrder!=null){
+            if(!regionCodeBuffer.isEmpty()){terminalMovingStatus(DriverStatus.COURSE);return;}
             if(snapshot.activeOrder.status==OrderStatus.ARRIVED){action(cb->backend.advanceOrder(snapshot.activeOrder.id,OrderStatus.IN_PROGRESS,cb));return;}
             if(snapshot.activeOrder.status==OrderStatus.IN_PROGRESS){showMessage("Już jesteś KURSEM.",true);return;}
             showMessage("Najpierw ustaw DOJAZD i NA MIEJSCU.",false);return;
@@ -611,6 +613,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
 
     private void terminalDriveToPickup(){
         if(snapshot.activeOrder!=null){
+            if(!regionCodeBuffer.isEmpty()){terminalMovingStatus(DriverStatus.DRIVING_TO_PICKUP);return;}
             if(snapshot.activeOrder.status==OrderStatus.ACCEPTED){action(cb->backend.advanceOrder(snapshot.activeOrder.id,OrderStatus.EN_ROUTE,cb));return;}
             if(snapshot.activeOrder.status==OrderStatus.EN_ROUTE){showMessage("Status DOJAZD jest już aktywny.",true);return;}
             showMessage("DOJAZD nie pasuje do bieżącego etapu kursu.",false);return;

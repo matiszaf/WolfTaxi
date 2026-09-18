@@ -1,42 +1,26 @@
-# WolfTaxi 0.8.1 — SMS AUTOMATION
+# WolfTaxi 0.8.3 — LOGIKA REJONÓW
 
-Automatyczne SMS-y klienta + trwała poprawka strony trackingowej.
+Ta wersja porządkuje semantykę klawiatury regionów bez zmiany wyglądu ekranu REJONY.
 
-# WolfTaxi 0.8 — prywatna bramka SMS w tej samej aplikacji
+## Zasady terminala
+- `KOD + OK` — zawsze ustawia **BIEŻĄCY rejon** kierowcy.
+- `KOD + KURSEM` — ustawia **DOCELOWY rejon** i tryb KURSEM, jeśli nie ma aktywnego zlecenia; podczas aktywnego zlecenia zmienia tylko cel, nie etap kursu.
+- `KOD + DOJAZD` — ustawia **DOCELOWY rejon** i tryb DOJAZD, jeśli nie ma aktywnego zlecenia; podczas aktywnego zlecenia zmienia tylko cel, nie etap kursu.
+- Aktywne zlecenie z centrali nie blokuje `KOD + OK`.
+- `current_region_id` i `target_region_id` są niezależne.
+- Jeśli kierowca zatwierdzi przez `OK` rejon równy celowi, cel jest automatycznie zamykany.
 
-WolfTaxi 0.8 rozwija 0.7 (taksometr + mapa LIVE + publiczny link śledzenia) o darmową bramkę SMS działającą z prywatnego APK na Androidzie.
+## Kolejka
+`OK` może automatycznie zapisać kierowcę do kolejki tylko wtedy, gdy:
+- nie ma aktywnego zlecenia/oferty,
+- status to `available` lub `in_queue`,
+- rejon ma włączoną kolejkę,
+- a przy rejonie z poligonem GPS potwierdza obecność w rejonie.
 
-## Najważniejsze
+Podczas kursu `OK` zmienia wyłącznie bieżący rejon — nie zapisuje do kolejki i nie zmienia etapu zlecenia.
 
-- jedna aplikacja i jeden podpis APK,
-- nowa rola `sms_gateway`,
-- osobny tryb **BRAMKA SMS** po zalogowaniu — bez dodawania zakładki do terminala kierowcy,
-- ekran `REJONY` kierowcy pozostaje bez zmian,
-- Android wysyła SMS przez kartę SIM telefonu (`SEND_SMS`),
-- backend ma kolejkę `sms_outbox`, leasing zadania i maks. 3 próby,
-- po przyjęciu/przypisaniu/nakazie/pobraniu z giełdy zlecenia system automatycznie kolejkuje SMS z linkiem śledzenia, jeśli zlecenie ma poprawny numer klienta,
-- polski 9-cyfrowy numer jest normalizowany do `+48...`,
-- centrala widzi `queued / sent / failed / skipped` przy zleceniu,
-- lokalny znacznik w telefonie ogranicza ryzyko duplikatu po zerwaniu sieci między wysłaniem SMS a raportem do Oracle.
+## Historia
+Zmiany bieżącego rejonu są zapisywane jako `region.current`, a osiągnięcie wcześniej ustawionego celu jako `target.reached`. Trafiają również do audytu centrali.
 
-## Urządzenie-bramka
-
-Najlepiej użyć jednego telefonu Android z kartą SIM i pakietem SMS. Konto powinno mieć rolę `sms_gateway`. Po zalogowaniu wybierz **BRAMKA SMS**, nadaj aplikacji zgodę na SMS i zostaw bramkę włączoną. Działa jako foreground service z trwałym powiadomieniem.
-
-W telefonie z dwiema kartami SIM używana jest domyślna karta SMS ustawiona w Androidzie.
-
-## Automatyczna wiadomość
-
-Po przypisaniu kursu system wysyła tekst w stylu:
-
-`WolfTaxi: Twoja taksówka jest w drodze. Śledź kurs na żywo: https://wolftaxi.starcore.pl/track/...`
-
-Jeśli podano imię klienta, jest ono używane w wiadomości.
-
-## Konto bramki
-
-Po wdrożeniu 0.8 zaloguj się jako administrator i utwórz konto z rolą **BRAMKA SMS**. Nie trzeba przypisywać mu profilu kierowcy ani numeru taxi.
-
-## Bezpieczeństwo
-
-Endpointy kolejki SMS wymagają zalogowanego JWT z rolą `sms_gateway`. Telefon nie przyjmuje dowolnej treści z internetu — pobiera tylko wiadomości przygotowane przez backend WolfTaxi.
+## Pozostałe funkcje
+Zachowane są funkcje 0.8.2/0.8.1: tracking klienta, mapa LIVE, taksometr, automatyka SMS, bramka SMS i stały podpis APK.

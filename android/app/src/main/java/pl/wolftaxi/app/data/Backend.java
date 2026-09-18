@@ -21,6 +21,7 @@ public interface Backend {
     void endShift(ActionCallback callback);
     void setStatus(DriverStatus status, ActionCallback callback);
     void setStatusForRegion(DriverStatus status, String regionId, ActionCallback callback);
+    void setCurrentRegion(String regionId, ActionCallback callback);
     void joinQueue(String regionId, ActionCallback callback);
     void leaveQueue(ActionCallback callback);
     void setTariff(String tariffId, ActionCallback callback);
