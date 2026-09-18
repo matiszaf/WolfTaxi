@@ -279,6 +279,16 @@ public final class DemoBackend implements Backend {
         for (DispatchMessage m : snapshot.messages) if (m.id.equals(messageId)) { m.answered = true; m.answer = yes ? "yes" : "no"; m.acknowledged = true; }
         callback.complete(true, yes ? "Odpowiedź: TAK" : "Odpowiedź: NIE"); publish();
     }
+    @Override public void completeOrder(String orderId, double finalPrice, PaymentMethod paymentMethod, ActionCallback callback) {
+        Order order = snapshot.activeOrder;
+        if (order == null || !order.id.equals(orderId) || order.status != OrderStatus.IN_PROGRESS) { callback.complete(false, "Kurs nie jest gotowy do zakończenia."); return; }
+        order.finalPrice = Math.max(0, finalPrice); order.paymentMethod = paymentMethod == null ? PaymentMethod.CASH : paymentMethod;
+        order.status = OrderStatus.COMPLETED; snapshot.history.add(0, order); snapshot.activeOrder = null; snapshot.driver.activeOrderId = ""; snapshot.driver.status = DriverStatus.AVAILABLE;
+        snapshot.todayRides++; snapshot.todayGross += order.finalPrice;
+        if (order.paymentMethod == PaymentMethod.CASH) snapshot.todayCash += order.finalPrice; else if (order.paymentMethod == PaymentMethod.CARD) snapshot.todayCard += order.finalPrice; else snapshot.todayCashless += order.finalPrice;
+        callback.complete(true, "Kurs zakończony"); publish();
+    }
+
     @Override public void simulateOffer(ActionCallback callback) {
         if (!snapshot.driver.onShift) {
             callback.complete(false, "Najpierw rozpocznij zmianę.");

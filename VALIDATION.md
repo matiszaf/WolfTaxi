@@ -1,10 +1,13 @@
-# Walidacja WolfTaxi 0.5.2
+# Walidacja 0.6
 
-- `node --check` / `npm run check`: OK dla backendu.
-- Migracja SQL jest idempotentna (`ADD COLUMN IF NOT EXISTS target_region_id`).
-- `KOD + KURSEM` wysyła `status=course` + `regionId`.
-- `KOD + DOJAZD` wysyła `status=driving_to_pickup` + `regionId`.
-- `OK` nadal zgłasza rejon / dołącza do kolejki.
-- Rejon docelowy jest osobny od bieżącego (`target_region_id` vs `current_region_id`).
-- Panel kierowcy i dyspozytora pokazują cel jako `→ REJON`.
-- Workflow podpisu zawiera poprawki wykrywania `apksigner` i parsera SHA-256.
+Sprawdzone przed spakowaniem:
+
+- `npm run check` — wszystkie pliki JS backendu przechodzą `node --check`;
+- `server/public/dispatch/app.js` przechodzi `node --check`;
+- workflow GitHub Actions zachowuje stabilny podpis release i parser SHA-256;
+- wersja API: `0.6.0`;
+- wersja APK: automatycznie `0.6.<GITHUB_RUN_NUMBER>`, versionCode `600000 + run_number`;
+- ekran REJONY porównany z 0.5.4: układ i przyciski bez zmian; jedyna zmiana logiczna w tym bloku to użycie `numericCode` z serwera, jeśli istnieje;
+- seed zawiera kody 21, 23, 24, 26, 37, 39, 87, 89 i 1.
+
+Pełny test instalacyjny Androida wykonuje GitHub Actions po pushu, ponieważ środowisko paczki nie zawiera lokalnego Android SDK.

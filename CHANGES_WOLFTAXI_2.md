@@ -1,57 +1,40 @@
-# WolfTaxi 0.5.3 — KODY PODCZAS KURSU
-
-- Naprawiono blokadę zakładki **REJONY/KODY** podczas aktywnego zlecenia.
-- Po rozpoczęciu kursu można przełączyć się do **REJONY**, używać klawiatury numerycznej, kodów i funkcji terminala, a następnie wrócić do **ZLEC.**
-- Nowa oferta nadal automatycznie otwiera **ZLEC.**, aby nie przeoczyć przyjęcia/odrzucenia.
-- Backend bez zmian — aktualizacja dotyczy tylko aplikacji Android.
-
-# WolfTaxi 0.5.2 — RT3000 REGION + ACTION
-
-- Kod rejonu jest teraz argumentem dla przycisków ruchu.
-- `2` + `KURSEM` = status KURSEM z celem ustawionym na rejon 2.
-- `2` + `DOJAZD` = status DOJAZD z celem ustawionym na rejon 2.
-- `OK` nadal oznacza zgłoszenie rejonu / wejście do kolejki.
-- Cel rejonu jest osobnym polem `target_region_id`; nie udajemy, że kierowca już znajduje się w rejonie docelowym.
-- Cel jest widoczny w terminalu jako `→ REJON` i w panelu dyspozytora.
-- WOLNY/PRZERWA/ZAJĘTY czyszczą cel przejazdu.
-- Zachowane stałe podpisywanie APK i poprawiona weryfikacja `apksigner`.
-
-# WolfTaxi 0.5.1 — RT3000 Terminal
-
-Ta wersja rozwija 0.5 RT3000 Core przede wszystkim po stronie terminala kierowcy i workflow centrali.
+# WolfTaxi 0.6 FULL RT3000 — zmiany
 
 ## Terminal kierowcy
-- dodano stałe zakładki u góry: `REJONY`, `ZLEC.`, `GIEŁDA`, `CENTR.`, `MENU`,
-- dodano terminalową klawiaturę numeryczną `0–9` do zgłaszania rejonu,
-- `OK` zgłasza wybrany kod rejonu / wchodzi do kolejki,
-- `C` kasuje wpisany kod,
-- dodano duże przyciski funkcji: `KURSEM`, `DOJAZD`, `WOLNY`, `PRZERWA`, `ZAJĘTY`, `NA MIEJSCU`, `TARYFA`, `SOS`,
-- dodano aktywne `TAK / NIE` po otrzymaniu pytania od centrali,
-- `TAK / NIE` są nieaktywne, gdy brak oczekującego pytania,
-- dodano legendę kodów numerycznych regionów wraz ze stanem kolejki,
-- dodano gęsty pasek stanu: status kierowcy, rejon/pozycja i taryfa/strefa,
-- zakładka zlecenia pokazuje ofertę i aktywny kurs,
-- zakładka giełdy pokazuje dostępne zlecenia,
-- zakładka centrali pokazuje pytania, komunikaty i SOS,
-- zakładka menu zawiera zmianę, historię, wybór regionu/taryfy i sesję.
 
-## Statusy terminalowe
-Backend 0.5.1 akceptuje dodatkowe statusy terminala:
-- `course` — KURSEM,
-- `busy` — ZAJĘTY,
-- `driving_to_pickup` — DOJAZD bez aktywnego zlecenia,
-- zachowane: `available`, `break`, `out_of_service`.
+- Zachowany ekran REJONY 0.5.4 bez zmian układu.
+- Jawne kody numeryczne rejonów z backendu.
+- KOD + OK / KURSEM / DOJAZD działa na identyfikatorze rejonu z bazy.
+- Zlecenia, giełda, nakazy, komunikaty, TAK/NIE, TTS i SOS pozostają zintegrowane.
+- Zakończenie kursu pyta o kwotę końcową i formę płatności.
+- MENU pokazuje dzienne rozliczenie kierowcy.
 
-Przy aktywnym zleceniu etap kursu ma pierwszeństwo nad ręczną zmianą statusu.
+## Kolejki / dispatch
 
-## Pytania centrali TAK/NIE
-- dyspozytor może wysłać typ `question`,
-- kierowca odpowiada z głównego terminala lub zakładki `CENTR.`,
-- odpowiedź jest zapisywana w PostgreSQL,
-- panel operatora otrzymuje liczniki odpowiedzi `TAK / NIE`.
+- Pozycje w kolejce na żywo.
+- Priorytet kierowcy i kolejki.
+- Filtracja kandydatów po wymaganiach: karta, zwierzę, bagaż, angielski.
+- Zlecenia planowane i automatyczne uwalnianie przed terminem.
+- Giełda i nakaz centrali.
 
-## UI
-Interfejs został zagęszczony w stronę terminalowego workflow RT3000: ciemne tło, zielone nagłówki, monospace, kolorowe stany i funkcje dostępne bez przechodzenia przez rozbudowane menu.
+## Centrala WWW
 
-## Podpis APK
-Pozostaje stały podpis release przez GitHub Actions Secrets. Kolejne wersje po pierwszej instalacji podpisanego release APK aktualizują się bez reinstalacji.
+- Mapa floty.
+- CRM klientów.
+- Firmy i limity.
+- Vouchery.
+- Pola firma/klient/voucher/centrum kosztów/referencja w zleceniu.
+- Rozliczenia kursów i dzienne podsumowanie.
+- Historia/audyt.
+- Komunikacja celowana i pytania TAK/NIE.
+
+## Backend / PostgreSQL
+
+- `numeric_code` dla regionów.
+- profile możliwości kierowców.
+- `clients`, `companies`, `vouchers`, `settlements`, `shift_sessions`, `order_events`, `system_settings`.
+- automatyczne tworzenie rozliczenia po zakończeniu kursu.
+- naliczanie wykorzystania vouchera.
+- statystyki klienta.
+- raport dzienny `/api/v1/dispatch/reports/daily`.
+- endpointy CRM, firm, voucherów i rozliczeń.

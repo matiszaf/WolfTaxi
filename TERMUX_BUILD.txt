@@ -1,6 +1,28 @@
-WolfTaxi phone-only build
+WolfTaxi 0.6 FULL RT3000 — Termux
 
-GitHub repo: matiszaf/WolfTaxi
-API: https://hosting.starcore.pl/wolftaxi-api
+1) Backend Oracle:
+scp ~/storage/downloads/WolfTaxi_0.6_SERVER_ONLY.zip hosting:/home/ubuntu/
+ssh hosting
+rm -rf ~/wt060 && mkdir ~/wt060
+unzip -q ~/WolfTaxi_0.6_SERVER_ONLY.zip -d ~/wt060
+cd ~/wt060/WolfTaxi_0.6_SERVER_ONLY
+chmod +x UPDATE_ORACLE_UBUNTU.sh scripts/*.sh
+./UPDATE_ORACLE_UBUNTU.sh
+curl https://wolftaxi.starcore.pl/health
+exit
 
-Workflow .github/workflows/android.yml writes the API URL into android/local.properties on the GitHub runner, builds app-debug.apk and uploads artifact WolfTaxi-APK.
+2) Repo / APK:
+cd ~
+rm -rf wt060app && mkdir wt060app
+unzip ~/storage/downloads/WolfTaxi_0.6_FULL_RT3000.zip -d ~/wt060app
+find ~/WolfTaxi -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+cp -a ~/wt060app/WolfTaxi_0.6_FULL_RT3000/. ~/WolfTaxi/
+cd ~/WolfTaxi
+git add -A
+git commit -m "WolfTaxi 0.6 FULL RT3000"
+git push origin main
+RUN_ID=$(gh run list --workflow android.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch "$RUN_ID" --exit-status
+rm -rf ~/storage/downloads/WolfTaxiBuild && mkdir -p ~/storage/downloads/WolfTaxiBuild
+gh run download "$RUN_ID" -n WolfTaxi-APK -D ~/storage/downloads/WolfTaxiBuild
+termux-open ~/storage/downloads/WolfTaxiBuild/WolfTaxi.apk

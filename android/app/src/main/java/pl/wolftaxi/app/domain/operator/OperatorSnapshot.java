@@ -18,4 +18,9 @@ public final class OperatorSnapshot {
     public ArrayList<SafetyAlertItem> alerts = new ArrayList<>();
     public boolean connected = true;
     public long generatedAt = 0;
+    public int todayRides = 0;
+    public double todayGross = 0;
+    public double todayCash = 0;
+    public double todayCard = 0;
+    public double todayCashless = 0;
 }

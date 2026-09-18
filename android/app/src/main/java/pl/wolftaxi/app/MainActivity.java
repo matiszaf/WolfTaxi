@@ -42,6 +42,7 @@ import pl.wolftaxi.app.data.OperatorBackend;
 import pl.wolftaxi.app.data.OperatorListener;
 import pl.wolftaxi.app.domain.DriverStatus;
 import pl.wolftaxi.app.domain.OrderStatus;
+import pl.wolftaxi.app.domain.PaymentMethod;
 import pl.wolftaxi.app.domain.model.DispatchMessage;
 import pl.wolftaxi.app.domain.model.DriverSnapshot;
 import pl.wolftaxi.app.domain.model.Order;
@@ -361,6 +362,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     }
 
     private String regionNumericCode(Region r){
+        if(!safe(r.numericCode).isEmpty()) return r.numericCode;
         String source=!safe(r.shortName).isEmpty()?r.shortName:r.id;
         String digits=source.replaceAll("[^0-9]","");
         return digits;
@@ -415,6 +417,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         if(order.cardRequired)meta+=" · KARTA"; if(order.luggage)meta+=" · BAGAŻ"; if(order.pet)meta+=" · ZWIERZĘ"; if(order.englishRequired)meta+=" · EN";
         Ui.text(this,card,meta,11,Ui.MUTED,false);
         if(order.mineWarning)Ui.text(this,card,"⚠ UWAGA: ZLECENIE OZNACZONE JAKO RYZYKOWNE",11,Ui.MAGENTA,true);
+        if(order.cashless)Ui.text(this,card,"BEZGOTÓWKOWE"+(!safe(order.voucherCode).isEmpty()?" · VOUCHER "+order.voucherCode:""),11,Ui.BLUE,true);
         if(!safe(order.notes).isEmpty())Ui.text(this,card,order.notes,11,Ui.MUTED,false);
         if(order.estimatedPrice>0)Ui.text(this,card,"Szacunkowo: "+money.format(order.estimatedPrice),12,Ui.TEXT,true);
         LinearLayout row=Ui.row(this);card.addView(row);
@@ -432,6 +435,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         if(!safe(order.destinationAddress).isEmpty()){Ui.text(this,card,"CEL",9,Ui.MUTED,true);Ui.text(this,card,order.destinationAddress,16,Ui.TEXT,false);}
         String req=order.passengerCount+" os."+(order.luggage?" · bagaż":"")+(order.pet?" · zwierzę":"")+(order.englishRequired?" · EN":""); Ui.text(this,card,req,11,Ui.MUTED,false);
         if(order.mineWarning)Ui.text(this,card,"⚠ OZNACZENIE RYZYKA",11,Ui.MAGENTA,true);
+        if(order.cashless)Ui.text(this,card,"BEZGOTÓWKOWE"+(!safe(order.voucherCode).isEmpty()?" · VOUCHER "+order.voucherCode:"")+(!safe(order.costCenter).isEmpty()?" · MPK "+order.costCenter:""),11,Ui.BLUE,true);
         if(!safe(order.passengerPhone).isEmpty())Ui.text(this,card,"Kontakt: "+order.passengerPhone,11,Ui.MUTED,false);
         if(!safe(order.notes).isEmpty())Ui.text(this,card,"Uwagi: "+order.notes,11,Ui.MUTED,false);
         LinearLayout utilities=Ui.row(this);card.addView(utilities);String navAddress=order.status==OrderStatus.IN_PROGRESS&&!safe(order.destinationAddress).isEmpty()?order.destinationAddress:order.pickupAddress;
@@ -439,7 +443,16 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         OrderStatus next=nextStatus(order.status);if(next!=null)Ui.button(this,card,nextAction(next),next==OrderStatus.COMPLETED?Ui.RED:Ui.GREEN,v->nextOrderAction(order,next));
     }
 
-    private void nextOrderAction(Order order,OrderStatus next){if(next==OrderStatus.COMPLETED)confirm("Zakończyć kurs?",()->action(cb->backend.advanceOrder(order.id,next,cb)));else action(cb->backend.advanceOrder(order.id,next,cb));}
+    private void nextOrderAction(Order order,OrderStatus next){if(next==OrderStatus.COMPLETED)completeOrderDialog(order);else action(cb->backend.advanceOrder(order.id,next,cb));}
+
+    private void completeOrderDialog(Order order){
+        LinearLayout box=dialogColumn();EditText price=numberField("Kwota końcowa");price.setText(String.format(Locale.US,"%.2f",order.estimatedPrice>0?order.estimatedPrice:order.finalPrice));
+        Spinner payment=spinner(new String[]{"Gotówka","Karta","Firma","Inna"});box.addView(price);box.addView(payment);
+        new AlertDialog.Builder(this).setTitle("Zakończ kurs").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAKOŃCZ",(d,w)->{
+            double amount=parseDouble(price);PaymentMethod method=new PaymentMethod[]{PaymentMethod.CASH,PaymentMethod.CARD,PaymentMethod.COMPANY,PaymentMethod.OTHER}[payment.getSelectedItemPosition()];
+            action(cb->backend.completeOrder(order.id,amount,method,cb));
+        }).show();
+    }
 
     private void renderDriverExchangeTab(){
         if(snapshot.exchange.isEmpty()){
@@ -506,6 +519,9 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         Ui.rowButton(this,row,"REGION LISTA",Ui.BLUE,v->chooseRegion());
         Ui.rowButton(this,row,"TARYFA",Ui.BLUE,v->chooseTariff());
         if(snapshot.queuePosition>0)Ui.button(this,info,"OPUŚĆ KOLEJKĘ",Ui.ORANGE,v->action(backend::leaveQueue));
+        LinearLayout daily=Ui.card(this,root);Ui.header(this,daily,"DZISIAJ / ROZLICZENIE");
+        Ui.text(this,daily,"Kursy: "+snapshot.todayRides+" · Obrót: "+money.format(snapshot.todayGross),12,Ui.TEXT,true);
+        Ui.text(this,daily,"Gotówka "+money.format(snapshot.todayCash)+" · Karta "+money.format(snapshot.todayCard)+" · Bezgot. "+money.format(snapshot.todayCashless),10,Ui.MUTED,false);
         renderHistory();
         if(snapshot.driver.onShift)Ui.button(this,root,"ZAKOŃCZ ZMIANĘ",Color.rgb(130,130,130),v->confirm("Zakończyć zmianę?",()->action(cb->backend.endShift((ok,msg)->{cb.complete(ok,msg);if(ok)runOnUiThread(this::stopLocationService);})))) ;
         else Ui.button(this,root,"ROZPOCZNIJ ZMIANĘ",Ui.GREEN,v->action(cb->backend.startShift((ok,msg)->{cb.complete(ok,msg);if(ok)runOnUiThread(()->ensureLocationService(true));})));
@@ -598,7 +614,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         if(root==null||(mode!=AppMode.DISPATCHER&&mode!=AppMode.ADMIN))return;root.removeAllViews();toastLine=null;
         if(operatorSnapshot==null){header(mode==AppMode.ADMIN?"Administrator":"Dyspozytornia","Łączenie z Oracle…",Ui.BLUE);return;}
         LinearLayout h=Ui.row(this);root.addView(h);LinearLayout left=Ui.column(this);h.addView(left,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));Ui.text(this,left,"WOLFTAXI",15,Ui.GREEN,true);Ui.text(this,left,mode==AppMode.ADMIN?"Administrator":"Dyspozytornia",25,Ui.TEXT,true);TextView badge=Ui.text(this,h,(operatorSnapshot.connected?"ONLINE":"OFFLINE")+" · ORACLE",12,operatorSnapshot.connected?Ui.GREEN:Ui.RED,true);badge.setGravity(Gravity.END);
-        renderOperatorAlerts(); renderOperatorStats(); renderOperatorActions(); renderOperatorDrivers(); renderOperatorOrders(); renderOperatorMessages(); if(mode==AppMode.ADMIN)renderAdminSummary(); renderSessionActions(); toastLine=Ui.text(this,root,"",13,Ui.MUTED,false);
+        renderOperatorAlerts(); renderOperatorStats(); renderOperatorActions(); renderOperatorDrivers(); renderOperatorOrders(); renderOperatorMessages(); renderOperatorSettlementSummary(); if(mode==AppMode.ADMIN)renderAdminSummary(); renderSessionActions(); toastLine=Ui.text(this,root,"",13,Ui.MUTED,false);
     }
     private void renderOperatorAlerts(){if(operatorSnapshot.alerts.isEmpty())return;LinearLayout card=Ui.card(this,root);Ui.header(this,card,"!!! SOS / ALARMY !!!");for(SafetyAlertItem a:operatorSnapshot.alerts){Ui.text(this,card,a.taxiId+" · "+a.driverName+" · "+a.status.toUpperCase(Locale.ROOT),15,Ui.RED,true);if(!safe(a.note).isEmpty())Ui.text(this,card,a.note,12,Ui.TEXT,false);LinearLayout row=Ui.row(this);card.addView(row);if("active".equals(a.status))Ui.rowButton(this,row,"POTWIERDŹ",Ui.ORANGE,v->operatorAction(cb->operatorBackend.acknowledgeAlert(a.id,cb)));Ui.rowButton(this,row,"ZAMKNIJ",Ui.GREEN,v->operatorAction(cb->operatorBackend.closeAlert(a.id,cb)));}}
 
@@ -607,7 +623,26 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private void renderOperatorActions(){LinearLayout row=Ui.row(this);root.addView(row);Ui.rowButton(this,row,"NOWE ZLECENIE",Ui.GREEN,v->newOrderDialog());Ui.rowButton(this,row,"KOMUNIKAT",Ui.BLUE,v->messageDialog());if(mode==AppMode.ADMIN)Ui.rowButton(this,row,"ADMIN",Ui.ORANGE,v->adminMenu());}
     private void renderOperatorDrivers(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"TAXI",13,Ui.MUTED,true);if(operatorSnapshot.drivers.isEmpty()){Ui.text(this,card,"Brak kierowców.",13,Ui.MUTED,false);return;}for(OperatorDriver d:operatorSnapshot.drivers){LinearLayout row=Ui.row(this);card.addView(row);LinearLayout left=Ui.column(this);row.addView(left,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));Ui.text(this,left,safe(d.taxiId)+" · "+safe(d.name),15,Ui.TEXT,true);String meta=(d.online?"online":"offline")+" · "+d.status+" · "+(d.queueRegionId.isEmpty()?safe(d.currentRegionId):d.queueRegionId)+(d.queuePosition>0?" "+d.queuePosition+"/"+d.queueSize:"");if(!safe(d.targetRegionId).isEmpty())meta+=" → "+d.targetRegionId;Ui.text(this,left,meta,12,d.online?Ui.GREEN:Ui.MUTED,false);TextView t=Ui.text(this,row,safe(d.currentTariffId),12,Ui.MUTED,true);t.setGravity(Gravity.END);}}
     private void renderOperatorOrders(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"ZLECENIA",13,Ui.MUTED,true);int shown=0;for(Order o:operatorSnapshot.orders){if(shown++>=12)break;LinearLayout block=Ui.column(this);block.setPadding(0,Ui.dp(this,5),0,Ui.dp(this,8));card.addView(block);Ui.text(this,block,o.id+" · "+o.status.label.toUpperCase(Locale.ROOT),13,orderColor(o.status),true);Ui.text(this,block,safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress),15,Ui.TEXT,true);Ui.text(this,block,"Region: "+safe(o.pickupRegionId)+" · "+(o.estimatedPrice>0?money.format(o.estimatedPrice):"bez wyceny"),12,Ui.MUTED,false);if(o.status!=OrderStatus.COMPLETED&&o.status!=OrderStatus.CANCELLED){LinearLayout buttons=Ui.row(this);block.addView(buttons);Ui.rowButton(this,buttons,"PRZYPISZ",Ui.BLUE,v->assignOrderDialog(o));Ui.rowButton(this,buttons,"NAKAZ",Ui.MAGENTA,v->forceOrderDialog(o));Ui.rowButton(this,buttons,"ANULUJ",Ui.RED,v->confirm("Anulować "+o.id+"?",()->operatorAction(cb->operatorBackend.cancelOrder(o.id,cb))));}}if(shown==0)Ui.text(this,card,"Brak zleceń.",13,Ui.MUTED,false);}
-    private void renderOperatorMessages(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"KOMUNIKATY",13,Ui.MUTED,true);for(int i=0;i<Math.min(operatorSnapshot.messages.size(),5);i++){DispatchMessage m=operatorSnapshot.messages.get(i);Ui.text(this,card,safe(m.title),12,Ui.MUTED,true);Ui.text(this,card,safe(m.body),14,"urgent".equals(m.type)?Ui.RED:("warning".equals(m.type)?Ui.ORANGE:Ui.TEXT),false);}if(operatorSnapshot.messages.isEmpty())Ui.text(this,card,"Brak komunikatów.",13,Ui.MUTED,false);}
+    private void renderOperatorMessages(){
+        LinearLayout card=Ui.card(this,root);Ui.text(this,card,"KOMUNIKATY",13,Ui.MUTED,true);
+        for(int i=0;i<Math.min(operatorSnapshot.messages.size(),8);i++){
+            DispatchMessage m=operatorSnapshot.messages.get(i);
+            String target="all".equals(m.targetType)?"WSZYSCY":("driver".equals(m.targetType)?"KIEROWCA "+operatorDriverLabel(m.targetId):"REGION "+m.targetId);
+            String title=safe(m.title).isEmpty()?("question".equals(m.type)?"PYTANIE":"KOMUNIKAT"):safe(m.title);
+            Ui.text(this,card,title+" · "+target,12,Ui.MUTED,true);
+            Ui.text(this,card,safe(m.body),14,"urgent".equals(m.type)?Ui.RED:("warning".equals(m.type)?Ui.ORANGE:("question".equals(m.type)?Ui.BLUE:Ui.TEXT)),false);
+            if("question".equals(m.type))Ui.text(this,card,"TAK "+m.yesCount+"  ·  NIE "+m.noCount,11,Ui.GREEN,true);
+        }
+        if(operatorSnapshot.messages.isEmpty())Ui.text(this,card,"Brak komunikatów.",13,Ui.MUTED,false);
+    }
+    private String operatorDriverLabel(String driverId){for(OperatorDriver d:operatorSnapshot.drivers)if(d.id.equals(driverId))return safe(d.taxiId).isEmpty()?safe(d.name):safe(d.taxiId);return driverId;}
+
+    private void renderOperatorSettlementSummary(){
+        LinearLayout card=Ui.card(this,root);Ui.text(this,card,"DZISIAJ / ROZLICZENIA",13,Ui.MUTED,true);
+        Ui.text(this,card,"Kursy: "+operatorSnapshot.todayRides+" · Obrót: "+money.format(operatorSnapshot.todayGross),14,Ui.TEXT,true);
+        Ui.text(this,card,"Gotówka "+money.format(operatorSnapshot.todayCash)+" · Karta "+money.format(operatorSnapshot.todayCard)+" · Bezgot. "+money.format(operatorSnapshot.todayCashless),11,Ui.MUTED,false);
+    }
+
     private void renderAdminSummary(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"ADMINISTRACJA",13,Ui.MUTED,true);Ui.text(this,card,"Konta: "+operatorSnapshot.users.size()+" · Taryfy: "+operatorSnapshot.tariffs.size()+" · Regiony: "+operatorSnapshot.regions.size()+" · Strefy: "+operatorSnapshot.fareZones.size(),14,Ui.TEXT,true);for(int i=0;i<Math.min(operatorSnapshot.users.size(),4);i++){UserAccount u=operatorSnapshot.users.get(i);Ui.text(this,card,(u.enabled?"● ":"○ ")+safe(u.name)+" · "+String.join("/",u.roles),12,u.enabled?Ui.GREEN:Ui.MUTED,false);}}
     private int orderColor(OrderStatus s){if(s==OrderStatus.NO_DRIVER||s==OrderStatus.CANCELLED)return Ui.RED;if(s==OrderStatus.OFFERED||s==OrderStatus.SEARCHING_DRIVER)return Ui.ORANGE;if(s.isActive())return Ui.BLUE;return Ui.MUTED;}
 
@@ -623,11 +658,21 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private void assignOrderDialog(Order order){ArrayList<OperatorDriver> drivers=new ArrayList<>();for(OperatorDriver d:operatorSnapshot.drivers)if(d.enabled&&d.onShift)drivers.add(d);if(drivers.isEmpty()){showMessage("Brak kierowców na zmianie.",false);return;}String[] labels=new String[drivers.size()];for(int i=0;i<labels.length;i++){OperatorDriver d=drivers.get(i);labels[i]=d.taxiId+" · "+d.status+(d.queuePosition>0?" · "+d.queueRegionId+" "+d.queuePosition+"/"+d.queueSize:"");}new AlertDialog.Builder(this).setTitle("Przypisz "+order.id).setItems(labels,(dialog,which)->operatorAction(cb->operatorBackend.assignOrder(order.id,drivers.get(which).id,cb))).show();}
     private void forceOrderDialog(Order order){ArrayList<OperatorDriver> drivers=new ArrayList<>();for(OperatorDriver d:operatorSnapshot.drivers)if(d.enabled&&d.onShift)drivers.add(d);if(drivers.isEmpty()){showMessage("Brak kierowców na zmianie.",false);return;}String[] labels=new String[drivers.size()];for(int i=0;i<labels.length;i++){OperatorDriver d=drivers.get(i);labels[i]=d.taxiId+" · "+d.status+" · priorytet "+d.priorityPoints;}new AlertDialog.Builder(this).setTitle("NAKAZ · "+order.id).setItems(labels,(dialog,which)->confirm("Wysłać zlecenie z nakazu do "+drivers.get(which).taxiId+"?",()->operatorAction(cb->operatorBackend.forceOrder(order.id,drivers.get(which).id,cb)))).show();}
     private void messageDialog(){
-        LinearLayout box=dialogColumn();EditText title=plainField("Tytuł");EditText body=plainField("Treść");body.setSingleLine(false);body.setMinLines(3);
+        LinearLayout box=dialogColumn();
+        EditText title=plainField("Tytuł");EditText body=plainField("Treść");body.setSingleLine(false);body.setMinLines(3);
         Spinner type=spinner(new String[]{"Informacja","Ostrzeżenie","Pilny","Pytanie TAK/NIE"});
-        Spinner target=spinner(new String[]{"Wszyscy","Konkretny kierowca","Region"}); EditText targetId=plainField("ID celu: UUID kierowcy lub R1"); CheckBox ack=new CheckBox(this),voice=new CheckBox(this);ack.setText("Wymagaj potwierdzenia");voice.setText("Czytaj głosowo");voice.setChecked(true);ack.setTextColor(Ui.TEXT);voice.setTextColor(Ui.TEXT);
-        box.addView(title);box.addView(body);box.addView(type);box.addView(target);box.addView(targetId);box.addView(ack);box.addView(voice);
-        new AlertDialog.Builder(this).setTitle("Komunikat do kierowców").setView(box).setNegativeButton("Wróć",null).setPositiveButton("WYŚLIJ",(d,w)->{String tt=target.getSelectedItemPosition()==1?"driver":(target.getSelectedItemPosition()==2?"region":"all");String mt=type.getSelectedItemPosition()==1?"warning":(type.getSelectedItemPosition()==2?"urgent":(type.getSelectedItemPosition()==3?"question":"info"));operatorAction(cb->operatorBackend.sendMessage(title.getText().toString(),body.getText().toString(),mt,tt,targetId.getText().toString().trim(),ack.isChecked(),voice.isChecked(),cb));}).show();
+        ArrayList<String> recipientLabels=new ArrayList<>();ArrayList<String> recipientTypes=new ArrayList<>();ArrayList<String> recipientIds=new ArrayList<>();
+        recipientLabels.add("WSZYSCY");recipientTypes.add("all");recipientIds.add("");
+        for(OperatorDriver d:operatorSnapshot.drivers){if(!d.enabled)continue;recipientLabels.add("KIEROWCA · "+safe(d.taxiId)+" · "+safe(d.name));recipientTypes.add("driver");recipientIds.add(d.id);}
+        for(Region r:operatorSnapshot.regions){if(!r.active)continue;recipientLabels.add("REGION · "+(safe(r.shortName).isEmpty()?r.id:r.shortName)+" · "+safe(r.name));recipientTypes.add("region");recipientIds.add(r.id);}
+        Spinner recipient=spinner(recipientLabels.toArray(new String[0]));
+        CheckBox ack=new CheckBox(this),voice=new CheckBox(this);ack.setText("Wymagaj potwierdzenia");voice.setText("Czytaj głosowo");voice.setChecked(true);ack.setTextColor(Ui.TEXT);voice.setTextColor(Ui.TEXT);
+        box.addView(title);box.addView(body);box.addView(type);box.addView(recipient);box.addView(ack);box.addView(voice);
+        new AlertDialog.Builder(this).setTitle("Komunikat do kierowców").setView(box).setNegativeButton("Wróć",null).setPositiveButton("WYŚLIJ",(d,w)->{
+            int ri=recipient.getSelectedItemPosition();String tt=recipientTypes.get(ri);String tid=recipientIds.get(ri);
+            String mt=type.getSelectedItemPosition()==1?"warning":(type.getSelectedItemPosition()==2?"urgent":(type.getSelectedItemPosition()==3?"question":"info"));
+            operatorAction(cb->operatorBackend.sendMessage(title.getText().toString(),body.getText().toString(),mt,tt,tid,ack.isChecked(),voice.isChecked(),cb));
+        }).show();
     }
     private void adminMenu(){new AlertDialog.Builder(this).setTitle("Administracja").setItems(new String[]{"Nowe konto","Nowa / zmień taryfę","Nowy / zmień region","Nowa / zmień strefę"},(d,w)->{if(w==0)createUserDialog();else if(w==1)tariffDialog();else if(w==2)regionDialog();else zoneDialog();}).show();}
     private void createUserDialog(){ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);EditText email=field("E-mail",false),name=plainField("Nazwa"),password=field("Hasło",true),taxi=plainField("ID taxi, np. TX2"),number=numberField("Numer taxi");CheckBox driver=new CheckBox(this),dispatcher=new CheckBox(this),admin=new CheckBox(this);driver.setText("Kierowca");dispatcher.setText("Dyspozytor");admin.setText("Administrator");driver.setTextColor(Ui.TEXT);dispatcher.setTextColor(Ui.TEXT);admin.setTextColor(Ui.TEXT);box.addView(email);box.addView(name);box.addView(password);box.addView(driver);box.addView(dispatcher);box.addView(admin);box.addView(taxi);box.addView(number);new AlertDialog.Builder(this).setTitle("Nowe konto").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{int n=0;try{n=Integer.parseInt(number.getText().toString().trim());}catch(Exception ignored){}final int taxiNumber=n;operatorAction(cb->operatorBackend.createUser(email.getText().toString(),name.getText().toString(),password.getText().toString(),driver.isChecked(),dispatcher.isChecked(),admin.isChecked(),taxi.getText().toString(),taxiNumber,cb));}).show();}
@@ -644,7 +689,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         if(value.offer!=null&&!value.offer.id.equals(lastSpokenOfferId)){lastSpokenOfferId=value.offer.id;speak("Nowe zlecenie. "+value.offer.pickupAddress+(value.offer.destinationAddress.isEmpty()?"":". Cel "+value.offer.destinationAddress));}
         if(value.activeOrder!=null&&value.activeOrder.forced&&!value.activeOrder.id.equals(lastSpokenForcedId)){lastSpokenForcedId=value.activeOrder.id;speak("Zlecenie z nakazu. "+value.activeOrder.pickupAddress);}
         if(!value.exchange.isEmpty()&&!value.exchange.get(0).id.equals(lastSpokenExchangeId)){Order o=value.exchange.get(0);lastSpokenExchangeId=o.id;speak("Giełda. "+o.pickupAddress+(o.destinationAddress.isEmpty()?"":" do "+o.destinationAddress));}
-        for(DispatchMessage m:value.messages){if(m.voiceRead&&!spokenMessageIds.contains(m.id)){spokenMessageIds.add(m.id);if("urgent".equals(m.type)||m.requiresAck)speak((m.title.isEmpty()?"Komunikat centrali":m.title)+". "+m.body);}}
+        for(DispatchMessage m:value.messages){if(m.voiceRead&&!spokenMessageIds.contains(m.id)){spokenMessageIds.add(m.id);if("urgent".equals(m.type)||"question".equals(m.type)||m.requiresAck)speak((m.title.isEmpty()?("question".equals(m.type)?"Pytanie centrali":"Komunikat centrali"):m.title)+". "+m.body);}}
     }
     private void speak(String text){if(ttsReady&&tts!=null&&text!=null&&!text.trim().isEmpty())tts.speak(text,TextToSpeech.QUEUE_ADD,null,"wolftaxi-"+System.nanoTime());}
 

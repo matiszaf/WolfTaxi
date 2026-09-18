@@ -57,8 +57,8 @@ jobs:
 
       - name: Automatyczna wersja APK
         run: |
-          echo "WOLFTAXI_VERSION_CODE=$((500000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "WOLFTAXI_VERSION_NAME=0.5.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "WOLFTAXI_VERSION_CODE=$((600000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "WOLFTAXI_VERSION_NAME=0.6.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
           echo "WOLFTAXI_KEYSTORE_PATH=$RUNNER_TEMP/wolftaxi-release.jks" >> "$GITHUB_ENV"
 
       - name: Cache Gradle

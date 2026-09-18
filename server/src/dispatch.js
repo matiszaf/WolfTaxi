@@ -4,9 +4,10 @@ const offerSeconds = () => Math.max(5, Number(process.env.OFFER_TIMEOUT_SECONDS 
 
 function requirementSql(order) {
   const checks = [];
-  // Miejsce na dalsze cechy pojazdu/kierowcy. W 0.5 wymogi są już zapisane w zleceniu
-  // i widoczne kierowcy; filtracja po dedykowanych profilach będzie rozwijana bez zmiany API.
-  if (order.english_required) checks.push('true');
+  if (order.card_required) checks.push('d.supports_card = true');
+  if (order.pet) checks.push('d.pet_allowed = true');
+  if (order.luggage) checks.push('d.luggage_capacity >= 1');
+  if (order.english_required) checks.push('d.english_level >= 1');
   return checks.length ? `AND ${checks.join(' AND ')}` : '';
 }
 

@@ -25,6 +25,13 @@ public class Order {
     public boolean forced = false;
     public String dispatchMode = "queue";
     public String source = "dispatch";
+    public String clientId = "";
+    public String companyId = "";
+    public String voucherCode = "";
+    public String costCenter = "";
+    public String bookingRef = "";
+    public String settlementStatus = "open";
+    public boolean cashless = false;
     public long scheduledFor = 0;
     public double estimatedPrice = 0;
     public double finalPrice = 0;

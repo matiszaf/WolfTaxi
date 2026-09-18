@@ -7,6 +7,7 @@ public class Region {
     public String id = "";
     public String name = "";
     public String shortName = "";
+    public String numericCode = "";
     public boolean active = true;
     public boolean queueEnabled = true;
     public int priority = 0;

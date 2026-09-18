@@ -13,6 +13,11 @@ public class DriverSnapshot {
     public int queuePosition = 0;
     public int queueSize = 0;
     public int queuePriority = 0;
+    public int todayRides = 0;
+    public double todayGross = 0;
+    public double todayCash = 0;
+    public double todayCard = 0;
+    public double todayCashless = 0;
     public SafetyAlert safetyAlert;
     public boolean connected = true;
     public String backendMode = "DEMO";

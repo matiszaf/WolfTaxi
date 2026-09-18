@@ -39,6 +39,14 @@ public final class SnapshotMapper {
         out.messages = messages(json.optJSONArray("messages"));
         out.queuePosition = json.optInt("queuePosition", 0);
         out.queueSize = json.optInt("queueSize", 0);
+        JSONObject settlement = json.optJSONObject("settlementToday");
+        if (settlement != null) {
+            out.todayRides = settlement.optInt("rides", 0);
+            out.todayGross = settlement.optDouble("gross", 0);
+            out.todayCash = settlement.optDouble("cash", 0);
+            out.todayCard = settlement.optDouble("card", 0);
+            out.todayCashless = settlement.optDouble("cashless", 0);
+        }
 
         for (Region value : out.regions) if (value.id.equals(out.driver.currentRegionId)) out.region = value;
         for (Tariff value : out.tariffs) if (value.id.equals(out.driver.currentTariffId)) out.tariff = value;
@@ -79,6 +87,7 @@ public final class SnapshotMapper {
             value.id = json.optString("id", "");
             value.name = json.optString("name", "");
             value.shortName = json.optString("shortName", value.id);
+            value.numericCode = json.optString("numericCode", "");
             value.active = json.optBoolean("active", true);
             value.queueEnabled = json.optBoolean("queueEnabled", true);
             value.priority = json.optInt("priority", 0);
@@ -158,6 +167,7 @@ public final class SnapshotMapper {
         out.forced = json.optBoolean("forced", false);
         out.dispatchMode = json.optString("dispatchMode", "queue");
         out.source = json.optString("source", "dispatch");
+        out.clientId = json.optString("clientId", ""); out.companyId = json.optString("companyId", ""); out.voucherCode = json.optString("voucherCode", ""); out.costCenter = json.optString("costCenter", ""); out.bookingRef = json.optString("bookingRef", ""); out.settlementStatus = json.optString("settlementStatus", "open"); out.cashless = json.optBoolean("cashless", false);
         out.scheduledFor = json.optLong("scheduledFor", 0);
         out.estimatedPrice = json.optDouble("estimatedPrice", 0);
         out.finalPrice = json.optDouble("finalPrice", 0);

@@ -9,7 +9,9 @@ function mapDriver(row) {
     currentTariffId: text(row.current_tariff_id), currentFareZoneId: text(row.current_fare_zone_id),
     activeOrderId: text(row.active_order_id), priorityPoints: Number(row.priority_points || 0),
     blockedReason: text(row.blocked_reason), ttsEnabled: row.tts_enabled !== false,
-    exchangeEnabled: row.exchange_enabled !== false
+    exchangeEnabled: row.exchange_enabled !== false,
+    supportsCard: row.supports_card !== false, petAllowed: row.pet_allowed !== false,
+    luggageCapacity: Number(row.luggage_capacity || 0), englishLevel: Number(row.english_level || 0)
   };
 }
 
@@ -27,7 +29,10 @@ function mapOrder(row) {
     paymentMethod: text(row.payment_method || 'cash'), dispatchMode: text(row.dispatch_mode || 'queue'),
     forced: !!row.forced, source: text(row.source || 'dispatch'), scheduledFor: ms(row.scheduled_for),
     luggage: !!row.luggage, pet: !!row.pet, englishRequired: !!row.english_required,
-    mineWarning: !!row.mine_warning, requirements: row.requirements || {}, cancelledReason: text(row.cancelled_reason)
+    mineWarning: !!row.mine_warning, requirements: row.requirements || {}, cancelledReason: text(row.cancelled_reason),
+    clientId: row.client_id == null ? '' : text(row.client_id), companyId: row.company_id == null ? '' : text(row.company_id),
+    voucherCode: text(row.voucher_code), costCenter: text(row.cost_center), bookingRef: text(row.booking_ref),
+    settlementStatus: text(row.settlement_status || 'open'), cashless: !!row.cashless
   };
 }
 
@@ -36,8 +41,8 @@ async function getSnapshot(client, driverId) {
   const driver = driverResult.rows[0];
   if (!driver) throw Object.assign(new Error('Brak profilu kierowcy.'), { statusCode: 404 });
 
-  const [regions, tariffs, zones, active, offer, exchange, history, messages, queue, alerts, regionStats] = await Promise.all([
-    client.query("SELECT id,name,short_name,active,queue_enabled,priority,polygon FROM regions WHERE active=true ORDER BY priority,id"),
+  const [regions, tariffs, zones, active, offer, exchange, history, messages, queue, alerts, regionStats, events, settlement] = await Promise.all([
+    client.query("SELECT id,numeric_code,name,short_name,active,queue_enabled,priority,polygon FROM regions WHERE active=true ORDER BY priority,id"),
     client.query("SELECT id,name,short_name,active,start_fee,price_per_km,waiting_price_per_hour,minimum_fare,sort_order FROM tariffs WHERE active=true ORDER BY sort_order,id"),
     client.query("SELECT id,name,active,multiplier,default_tariff_id,priority,polygon FROM fare_zones WHERE active=true ORDER BY priority,id"),
     client.query("SELECT * FROM orders WHERE assigned_driver_id=$1 AND status IN ('accepted','en_route','arrived','in_progress') ORDER BY updated_at DESC LIMIT 1", [driverId]),
@@ -78,7 +83,7 @@ async function getSnapshot(client, driverId) {
     `, [driverId]),
     client.query("SELECT id,alert_type,status,note,lat,lng,created_at FROM safety_alerts WHERE driver_id=$1 AND status IN ('active','acknowledged') ORDER BY created_at DESC LIMIT 1", [driverId]),
     client.query(`
-      SELECT r.id,r.short_name,r.name,
+      SELECT r.id,r.numeric_code,r.short_name,r.name,
              count(q.driver_id)::int AS queued,
              count(*) FILTER (WHERE d.status='available')::int AS available,
              count(*) FILTER (WHERE d.status IN ('driving_to_pickup','at_pickup','in_ride','busy','course'))::int AS busy
@@ -86,14 +91,20 @@ async function getSnapshot(client, driverId) {
       LEFT JOIN queue_entries q ON q.region_id=r.id
       LEFT JOIN drivers d ON d.id=q.driver_id
       WHERE r.active=true
-      GROUP BY r.id,r.short_name,r.name,r.priority
+      GROUP BY r.id,r.numeric_code,r.short_name,r.name,r.priority
       ORDER BY r.priority,r.id
-    `)
+    `),
+    client.query("SELECT id,event_type,payload,created_at FROM driver_events WHERE driver_id=$1 ORDER BY created_at DESC LIMIT 30", [driverId]),
+    client.query(`SELECT count(*)::int AS rides,COALESCE(sum(gross_amount),0)::numeric AS gross,
+                         COALESCE(sum(CASE WHEN payment_method='cash' THEN gross_amount ELSE 0 END),0)::numeric AS cash,
+                         COALESCE(sum(CASE WHEN payment_method='card' THEN gross_amount ELSE 0 END),0)::numeric AS card,
+                         COALESCE(sum(CASE WHEN payment_method NOT IN ('cash','card') THEN gross_amount ELSE 0 END),0)::numeric AS cashless
+                  FROM settlements WHERE driver_id=$1 AND created_at>=date_trunc('day',now())`, [driverId])
   ]);
 
   return {
     driver: mapDriver(driver),
-    regions: regions.rows.map(r => ({ id:text(r.id), name:text(r.name), shortName:text(r.short_name), active:!!r.active, queueEnabled:!!r.queue_enabled, priority:r.priority || 0, polygon:r.polygon || [] })),
+    regions: regions.rows.map(r => ({ id:text(r.id), numericCode:text(r.numeric_code), name:text(r.name), shortName:text(r.short_name), active:!!r.active, queueEnabled:!!r.queue_enabled, priority:r.priority || 0, polygon:r.polygon || [] })),
     tariffs: tariffs.rows.map(t => ({ id:text(t.id), name:text(t.name), shortName:text(t.short_name), active:!!t.active, startFee:Number(t.start_fee||0), pricePerKm:Number(t.price_per_km||0), waitingPricePerHour:Number(t.waiting_price_per_hour||0), minimumFare:Number(t.minimum_fare||0) })),
     fareZones: zones.rows.map(z => ({ id:text(z.id), name:text(z.name), active:!!z.active, multiplier:Number(z.multiplier||1), defaultTariffId:text(z.default_tariff_id), polygon:z.polygon || [] })),
     activeOrder: mapOrder(active.rows[0]),
@@ -105,7 +116,12 @@ async function getSnapshot(client, driverId) {
     queueSize: queue.rows[0]?.total || 0,
     queuePriority: queue.rows[0]?.priority_score || 0,
     safetyAlert: alerts.rows[0] ? { id:text(alerts.rows[0].id), type:text(alerts.rows[0].alert_type), status:text(alerts.rows[0].status), note:text(alerts.rows[0].note), lat:alerts.rows[0].lat==null?null:Number(alerts.rows[0].lat), lng:alerts.rows[0].lng==null?null:Number(alerts.rows[0].lng), createdAt:ms(alerts.rows[0].created_at) } : null,
-    regionStats: regionStats.rows.map(r => ({ id:text(r.id), shortName:text(r.short_name), name:text(r.name), queued:r.queued||0, available:r.available||0, busy:r.busy||0 }))
+    regionStats: regionStats.rows.map(r => ({ id:text(r.id), numericCode:text(r.numeric_code), shortName:text(r.short_name), name:text(r.name), queued:r.queued||0, available:r.available||0, busy:r.busy||0 })),
+    events: events.rows.map(e => ({ id:text(e.id), type:text(e.event_type), payload:e.payload||{}, createdAt:ms(e.created_at) })),
+    settlementToday: {
+      rides:settlement.rows[0]?.rides||0, gross:Number(settlement.rows[0]?.gross||0), cash:Number(settlement.rows[0]?.cash||0),
+      card:Number(settlement.rows[0]?.card||0), cashless:Number(settlement.rows[0]?.cashless||0)
+    }
   };
 }
 

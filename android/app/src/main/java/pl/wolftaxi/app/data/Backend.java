@@ -2,6 +2,7 @@ package pl.wolftaxi.app.data;
 
 import pl.wolftaxi.app.domain.DriverStatus;
 import pl.wolftaxi.app.domain.OrderStatus;
+import pl.wolftaxi.app.domain.PaymentMethod;
 
 public interface Backend {
     String modeLabel();
@@ -27,6 +28,7 @@ public interface Backend {
     void rejectOrder(String orderId, ActionCallback callback);
     void expireOrder(String orderId, ActionCallback callback);
     void advanceOrder(String orderId, OrderStatus nextStatus, ActionCallback callback);
+    void completeOrder(String orderId, double finalPrice, PaymentMethod paymentMethod, ActionCallback callback);
     void simulateOffer(ActionCallback callback);
     void claimExchange(String orderId, ActionCallback callback);
     void sendSos(String note, ActionCallback callback);

@@ -222,3 +222,120 @@ CREATE TABLE IF NOT EXISTS message_response (
   PRIMARY KEY(message_id,user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_message_response_message ON message_response(message_id,responded_at DESC);
+
+-- WolfTaxi 0.6 FULL RT3000 ----------------------------------------------------
+ALTER TABLE regions ADD COLUMN IF NOT EXISTS numeric_code text;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_regions_numeric_code ON regions(numeric_code) WHERE numeric_code IS NOT NULL AND numeric_code<>'';
+
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS supports_card boolean NOT NULL DEFAULT true;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS pet_allowed boolean NOT NULL DEFAULT true;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS luggage_capacity integer NOT NULL DEFAULT 2;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS english_level integer NOT NULL DEFAULT 0;
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS client_id bigint;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS company_id bigint;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS voucher_code text NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cost_center text NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS booking_ref text NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS settlement_status text NOT NULL DEFAULT 'open';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cashless boolean NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS clients (
+  id bigserial PRIMARY KEY,
+  name text NOT NULL DEFAULT '',
+  phone text NOT NULL DEFAULT '',
+  email text NOT NULL DEFAULT '',
+  notes text NOT NULL DEFAULT '',
+  blocked boolean NOT NULL DEFAULT false,
+  rides_count integer NOT NULL DEFAULT 0,
+  total_spend numeric(12,2) NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phone);
+CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(lower(name));
+
+CREATE TABLE IF NOT EXISTS companies (
+  id bigserial PRIMARY KEY,
+  name text NOT NULL,
+  nip text NOT NULL DEFAULT '',
+  billing_email text NOT NULL DEFAULT '',
+  phone text NOT NULL DEFAULT '',
+  active boolean NOT NULL DEFAULT true,
+  monthly_limit numeric(12,2) NOT NULL DEFAULT 0,
+  notes text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_companies_nip ON companies(nip) WHERE nip<>'';
+
+CREATE TABLE IF NOT EXISTS vouchers (
+  code text PRIMARY KEY,
+  company_id bigint REFERENCES companies(id) ON DELETE SET NULL,
+  client_id bigint REFERENCES clients(id) ON DELETE SET NULL,
+  amount numeric(10,2) NOT NULL DEFAULT 0,
+  remaining_amount numeric(10,2) NOT NULL DEFAULT 0,
+  active boolean NOT NULL DEFAULT true,
+  valid_from timestamptz NOT NULL DEFAULT now(),
+  valid_until timestamptz,
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  used_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS settlements (
+  id bigserial PRIMARY KEY,
+  order_id text UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+  driver_id uuid REFERENCES drivers(id) ON DELETE SET NULL,
+  company_id bigint REFERENCES companies(id) ON DELETE SET NULL,
+  client_id bigint REFERENCES clients(id) ON DELETE SET NULL,
+  payment_method text NOT NULL DEFAULT 'cash',
+  gross_amount numeric(12,2) NOT NULL DEFAULT 0,
+  driver_amount numeric(12,2) NOT NULL DEFAULT 0,
+  company_amount numeric(12,2) NOT NULL DEFAULT 0,
+  voucher_amount numeric(12,2) NOT NULL DEFAULT 0,
+  status text NOT NULL DEFAULT 'open',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  settled_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_settlements_driver_created ON settlements(driver_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS shift_sessions (
+  id bigserial PRIMARY KEY,
+  driver_id uuid NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+  started_at timestamptz NOT NULL DEFAULT now(),
+  ended_at timestamptz,
+  start_odometer numeric(12,2),
+  end_odometer numeric(12,2),
+  cash_total numeric(12,2) NOT NULL DEFAULT 0,
+  card_total numeric(12,2) NOT NULL DEFAULT 0,
+  company_total numeric(12,2) NOT NULL DEFAULT 0,
+  rides_count integer NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_shift_sessions_driver ON shift_sessions(driver_id,started_at DESC);
+
+CREATE TABLE IF NOT EXISTS order_events (
+  id bigserial PRIMARY KEY,
+  order_id text NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  actor_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  actor_driver_id uuid REFERENCES drivers(id) ON DELETE SET NULL,
+  event_type text NOT NULL,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_order_events_order ON order_events(order_id,created_at ASC);
+
+CREATE TABLE IF NOT EXISTS system_settings (
+  key text PRIMARY KEY,
+  value jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='orders_client_id_fkey') THEN
+    ALTER TABLE orders ADD CONSTRAINT orders_client_id_fkey FOREIGN KEY(client_id) REFERENCES clients(id) ON DELETE SET NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='orders_company_id_fkey') THEN
+    ALTER TABLE orders ADD CONSTRAINT orders_company_id_fkey FOREIGN KEY(company_id) REFERENCES companies(id) ON DELETE SET NULL;
+  END IF;
+END $$;

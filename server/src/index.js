@@ -33,7 +33,7 @@ const ok = (res, message, extra = {}) => res.json({ ok: true, message, ...extra 
 
 app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.5.2', time: new Date().toISOString() });
+  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.6.0', time: new Date().toISOString() });
 }));
 
 // Panel WWW. Publiczny Apache może mapować /dispatch/ bezpośrednio tutaj.
@@ -87,8 +87,11 @@ app.post('/api/v1/driver/shift/start', ...driverGuard, asyncRoute(async (req, re
     if (!d) throw statusError(404, 'Brak profilu kierowcy.');
     if (!d.enabled) throw statusError(403, 'Konto kierowcy jest zablokowane.');
     await client.query("UPDATE drivers SET on_shift=true, status='available', target_region_id=NULL, online=true, updated_at=now() WHERE id=$1", [req.driverId]);
+    await client.query(`INSERT INTO shift_sessions(driver_id,started_at) SELECT $1,now() WHERE NOT EXISTS (SELECT 1 FROM shift_sessions WHERE driver_id=$1 AND ended_at IS NULL)`, [req.driverId]);
+    await driverEvent(client, req.driverId, 'shift.start', {});
     await audit(client, req.userId, 'driver.shift.start', 'driver', req.driverId);
   });
+  realtime.broadcastOperators('refresh',{reason:'shift.start',driverId:req.driverId}); realtime.broadcastDrivers('refresh',{reason:'shift.start'});
   ok(res, 'Zmiana rozpoczęta');
 }));
 
@@ -98,8 +101,11 @@ app.post('/api/v1/driver/shift/end', ...driverGuard, asyncRoute(async (req, res)
     if (active.rows[0]) throw statusError(409, 'Najpierw zakończ lub odrzuć zlecenie.');
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
     await client.query("UPDATE drivers SET on_shift=false, status='offline', current_region_id=NULL, target_region_id=NULL, active_order_id=NULL, online=false, updated_at=now() WHERE id=$1", [req.driverId]);
+    await client.query(`UPDATE shift_sessions SET ended_at=now() WHERE id=(SELECT id FROM shift_sessions WHERE driver_id=$1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1)`, [req.driverId]);
+    await driverEvent(client, req.driverId, 'shift.end', {});
     await audit(client, req.userId, 'driver.shift.end', 'driver', req.driverId);
   });
+  realtime.broadcastOperators('refresh',{reason:'shift.end',driverId:req.driverId}); realtime.broadcastDrivers('refresh',{reason:'shift.end'});
   ok(res, 'Zmiana zakończona');
 }));
 
@@ -123,8 +129,10 @@ app.post('/api/v1/driver/status', ...driverGuard, asyncRoute(async (req, res) =>
 
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
     await client.query('UPDATE drivers SET status=$2, target_region_id=$3, updated_at=now() WHERE id=$1', [req.driverId, status, targetRegionId]);
+    await driverEvent(client, req.driverId, 'status', { status, targetRegionId });
     await audit(client, req.userId, 'driver.status', 'driver', req.driverId, { status, targetRegionId });
   });
+  realtime.broadcastOperators('refresh',{reason:'driver.status',driverId:req.driverId}); realtime.broadcastDrivers('refresh',{reason:'driver.status'});
   ok(res, requestedRegionId && (status === 'course' || status === 'driving_to_pickup') ? `Status: ${status} → ${requestedRegionId}` : `Status: ${status}`);
 }));
 
@@ -150,8 +158,10 @@ app.post('/api/v1/driver/queue/join', ...driverGuard, asyncRoute(async (req, res
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
     await client.query('INSERT INTO queue_entries(region_id,driver_id,joined_at,priority_score) VALUES($1,$2,now(),0)', [regionId, req.driverId]);
     await client.query("UPDATE drivers SET current_region_id=$2, target_region_id=NULL, status='in_queue', updated_at=now() WHERE id=$1", [req.driverId, regionId]);
+    await driverEvent(client, req.driverId, 'queue.join', { regionId });
     await audit(client, req.userId, 'driver.queue.join', 'region', regionId, { driverId:req.driverId });
   });
+  realtime.broadcastOperators('refresh',{reason:'queue.join',driverId:req.driverId,regionId}); realtime.broadcastDrivers('refresh',{reason:'queue.join'});
   ok(res, `Dołączono do kolejki ${regionId}`);
 }));
 
@@ -159,8 +169,10 @@ app.post('/api/v1/driver/queue/leave', ...driverGuard, asyncRoute(async (req, re
   await tx(async client => {
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
     await client.query("UPDATE drivers SET status=CASE WHEN on_shift THEN 'available' ELSE 'offline' END, current_region_id=NULL, target_region_id=NULL, updated_at=now() WHERE id=$1", [req.driverId]);
+    await driverEvent(client, req.driverId, 'queue.leave', {});
     await audit(client, req.userId, 'driver.queue.leave', 'driver', req.driverId);
   });
+  realtime.broadcastOperators('refresh',{reason:'queue.leave',driverId:req.driverId}); realtime.broadcastDrivers('refresh',{reason:'queue.leave'});
   ok(res, 'Opuszczono kolejkę');
 }));
 
@@ -175,6 +187,7 @@ app.post('/api/v1/driver/tariff', ...driverGuard, asyncRoute(async (req, res) =>
     await client.query('UPDATE drivers SET current_tariff_id=$2, updated_at=now() WHERE id=$1', [req.driverId, tariffId]);
     await audit(client, req.userId, 'driver.tariff', 'tariff', tariffId, { driverId:req.driverId });
   });
+  realtime.broadcastOperators('refresh',{reason:'driver.tariff',driverId:req.driverId}); realtime.broadcastDrivers('refresh',{reason:'driver.tariff'});
   ok(res, `Ustawiono ${tariffId}`);
 }));
 
@@ -211,8 +224,11 @@ app.post('/api/v1/orders/:id/accept', ...driverGuard, asyncRoute(async (req, res
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
     await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),updated_at=now() WHERE id=$1", [order.id, req.driverId]);
     await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1", [req.driverId, order.id]);
+    await driverEvent(client, req.driverId, 'order.accept', { orderId:order.id });
+    await orderEvent(client, order.id, req.userId, req.driverId, 'accepted', {});
     await audit(client, req.userId, 'order.accept', 'order', order.id, { driverId:req.driverId });
   });
+  realtime.broadcastOperators('refresh',{reason:'order.accept',orderId:req.params.id}); realtime.broadcastDrivers('refresh',{reason:'order.accept'});
   ok(res, 'Zlecenie przyjęte');
 }));
 
@@ -225,8 +241,11 @@ app.post('/api/v1/orders/:id/reject', ...driverGuard, asyncRoute(async (req, res
     await client.query('UPDATE drivers SET status=$2,updated_at=now() WHERE id=$1', [req.driverId, queued ? 'in_queue' : 'available']);
     await client.query("UPDATE orders SET status='searching_driver',offered_driver_id=NULL,offer_expires_at=NULL,updated_at=now() WHERE id=$1", [order.id]);
     await offerOrder(client, order.id, req.driverId);
+    await driverEvent(client, req.driverId, 'order.reject', { orderId:order.id });
+    await orderEvent(client, order.id, req.userId, req.driverId, 'rejected', {});
     await audit(client, req.userId, 'order.reject', 'order', order.id, { driverId:req.driverId });
   });
+  realtime.broadcastOperators('refresh',{reason:'order.reject',orderId:req.params.id}); realtime.broadcastDrivers('refresh',{reason:'order.reject'});
   ok(res, 'Oferta odrzucona');
 }));
 
@@ -252,7 +271,7 @@ app.post('/api/v1/orders/:id/advance', ...driverGuard, asyncRoute(async (req, re
     if (transitions[order.status] !== next) throw statusError(409, 'Niedozwolona zmiana statusu.');
     const driverStatus = { en_route:'driving_to_pickup', arrived:'at_pickup', in_progress:'in_ride', completed:'available' }[next];
     if (next === 'completed') {
-      const finalPrice = Number(req.body?.finalPrice ?? order.final_price ?? order.estimated_price ?? 0);
+      const finalPrice = Math.max(0, Number(req.body?.finalPrice ?? order.final_price ?? order.estimated_price ?? 0) || 0);
       const paymentMethod = String(req.body?.paymentMethod || order.payment_method || 'cash');
       await client.query("UPDATE orders SET status='completed',final_price=$2,payment_method=$3,completed_at=now(),updated_at=now() WHERE id=$1", [order.id, finalPrice, paymentMethod]);
       await client.query("UPDATE drivers SET active_order_id=NULL,status='available',target_region_id=NULL,updated_at=now() WHERE id=$1", [req.driverId]);
@@ -260,8 +279,17 @@ app.post('/api/v1/orders/:id/advance', ...driverGuard, asyncRoute(async (req, re
       await client.query(`UPDATE orders SET status=$2, arrived_at=CASE WHEN $2='arrived' THEN now() ELSE arrived_at END, started_at=CASE WHEN $2='in_progress' THEN now() ELSE started_at END, updated_at=now() WHERE id=$1`, [order.id, next]);
       await client.query('UPDATE drivers SET status=$2,updated_at=now() WHERE id=$1', [req.driverId, driverStatus]);
     }
+    if (next === 'completed') {
+      const completed = (await client.query('SELECT * FROM orders WHERE id=$1', [order.id])).rows[0];
+      await createSettlement(client, completed, req.driverId);
+      await driverEvent(client, req.driverId, 'order.completed', { orderId:order.id, finalPrice:Number(completed.final_price||0), paymentMethod:completed.payment_method });
+    } else {
+      await driverEvent(client, req.driverId, 'order.'+next, { orderId:order.id });
+    }
+    await orderEvent(client, order.id, req.userId, req.driverId, next, {});
     await audit(client, req.userId, 'order.advance', 'order', order.id, { next });
   });
+  realtime.broadcastOperators('refresh',{reason:'order.advance',orderId:req.params.id,next}); realtime.broadcastDrivers('refresh',{reason:'order.advance'});
   ok(res, next === 'completed' ? 'Kurs zakończony' : 'Zaktualizowano zlecenie');
 }));
 
@@ -322,6 +350,33 @@ app.post('/api/v1/dispatch/orders', ...dispatchGuard, asyncRoute(async (req, res
       String(req.body?.source || 'dispatch'), scheduledFor, !!req.body?.luggage, !!req.body?.pet, !!req.body?.englishRequired,
       !!req.body?.mineWarning, JSON.stringify(req.body?.requirements && typeof req.body.requirements==='object' ? req.body.requirements : {})
     ]);
+    const clientId = nullable(req.body?.clientId);
+    const companyId = nullable(req.body?.companyId);
+    const voucherCode = String(req.body?.voucherCode || '').trim().toUpperCase();
+    if (clientId) {
+      const c=(await client.query('SELECT id,blocked FROM clients WHERE id=$1',[clientId])).rows[0];
+      if(!c) throw statusError(400,'Nieznany klient.');
+      if(c.blocked) throw statusError(409,'Klient jest zablokowany.');
+    }
+    if (companyId) {
+      const c=(await client.query('SELECT id,active,monthly_limit FROM companies WHERE id=$1',[companyId])).rows[0];
+      if(!c||!c.active) throw statusError(400,'Nieznana lub nieaktywna firma.');
+      const limit=Number(c.monthly_limit||0);
+      if(limit>0){
+        const used=Number((await client.query(`SELECT COALESCE(sum(gross_amount),0) AS used FROM settlements WHERE company_id=$1 AND created_at>=date_trunc('month',now())`,[companyId])).rows[0]?.used||0);
+        const estimate=finite(req.body?.estimatedPrice);
+        if(used+estimate>limit) throw statusError(409,`Limit firmy zostałby przekroczony (${used.toFixed(2)} / ${limit.toFixed(2)} zł).`);
+      }
+    }
+    if (voucherCode) {
+      const v=(await client.query(`SELECT * FROM vouchers WHERE code=$1 AND active=true AND remaining_amount>0 AND valid_from<=now() AND (valid_until IS NULL OR valid_until>=now())`,[voucherCode])).rows[0];
+      if(!v) throw statusError(400,'Voucher jest nieważny lub wykorzystany.');
+    }
+    const cashless = !!req.body?.cashless || !!companyId || !!voucherCode;
+    const derivedPayment = String(req.body?.paymentMethod || (companyId ? 'company' : (voucherCode ? 'other' : 'cash')));
+    await client.query(`UPDATE orders SET client_id=$2,company_id=$3,voucher_code=$4,cost_center=$5,booking_ref=$6,cashless=$7,payment_method=$8 WHERE id=$1`,
+      [id,clientId,companyId,voucherCode,String(req.body?.costCenter||''),String(req.body?.bookingRef||''),cashless,derivedPayment]);
+    await orderEvent(client,id,req.userId,null,'created',{dispatchMode,scheduledFor,clientId,companyId,voucherCode});
     if (initialStatus === 'searching_driver') offered = await offerOrder(client, id);
     await audit(client, req.userId, 'dispatch.order.create', 'order', id, { pickupRegionId, offered, dispatchMode, scheduledFor });
   });
@@ -345,8 +400,10 @@ app.post('/api/v1/dispatch/orders/:id/assign', ...dispatchGuard, asyncRoute(asyn
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [driverId]);
     await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),updated_at=now() WHERE id=$1", [order.id, driverId]);
     await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1", [driverId, order.id]);
+    await orderEvent(client,order.id,req.userId,driverId,'assigned',{forced:false});
     await audit(client, req.userId, 'dispatch.order.assign', 'order', order.id, { driverId });
   });
+  realtime.broadcastOperators('refresh',{reason:'order.assign',orderId:req.params.id}); realtime.broadcastDrivers('refresh',{reason:'order.assign'});
   ok(res, 'Zlecenie przypisane.');
 }));
 
@@ -363,17 +420,30 @@ app.post('/api/v1/dispatch/orders/:id/cancel', ...dispatchGuard, asyncRoute(asyn
     await client.query("UPDATE orders SET status='cancelled',offered_driver_id=NULL,offer_expires_at=NULL,cancelled_reason=$2,updated_at=now() WHERE id=$1", [order.id,String(req.body?.reason || '')]);
     await audit(client, req.userId, 'dispatch.order.cancel', 'order', order.id, { reason:String(req.body?.reason || '') });
   });
+  realtime.broadcastOperators('refresh',{reason:'order.cancel',orderId:req.params.id}); realtime.broadcastDrivers('refresh',{reason:'order.cancel'});
   ok(res, 'Zlecenie anulowane.');
 }));
 
 app.post('/api/v1/dispatch/messages', ...dispatchGuard, asyncRoute(async (req, res) => {
-  const title = String(req.body?.title || '').trim();
+  let title = String(req.body?.title || '').trim();
   const body = String(req.body?.body || '').trim();
   const type = ['info','warning','urgent','system','question'].includes(String(req.body?.type || 'info')) ? String(req.body?.type || 'info') : 'info';
   if (!body) throw statusError(400, 'Wpisz treść wiadomości.');
   const targetType = ['all','driver','region'].includes(String(req.body?.targetType || 'all')) ? String(req.body?.targetType || 'all') : 'all';
-  const targetId = String(req.body?.targetId || '').trim();
+  let targetId = String(req.body?.targetId || '').trim();
+  if (type === 'question' && !title) title = 'PYTANIE CENTRALI';
+  if (targetType === 'all') targetId = '';
   await tx(async client => {
+    if (targetType === 'driver') {
+      if (!targetId) throw statusError(400, 'Wybierz kierowcę.');
+      const target = (await client.query('SELECT id FROM drivers WHERE id=$1 AND enabled=true', [targetId])).rows[0];
+      if (!target) throw statusError(400, 'Nieznany lub nieaktywny kierowca.');
+    }
+    if (targetType === 'region') {
+      if (!targetId) throw statusError(400, 'Wybierz region.');
+      const target = (await client.query('SELECT id FROM regions WHERE id=$1 AND active=true', [targetId])).rows[0];
+      if (!target) throw statusError(400, 'Nieznany lub nieaktywny region.');
+    }
     const result = await client.query('INSERT INTO messages(type,title,body,requires_ack,active,created_by,target_type,target_id,voice_read) VALUES($1,$2,$3,$4,true,$5,$6,$7,$8) RETURNING id', [type,title,body,!!req.body?.requiresAck,req.userId,targetType,targetId,req.body?.voiceRead !== false]);
     await audit(client, req.userId, 'dispatch.message.create', 'message', String(result.rows[0].id), { type,title,targetType,targetId });
   });
@@ -467,6 +537,8 @@ app.post('/api/v1/dispatch/orders/:id/force', ...dispatchGuard, asyncRoute(async
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1',[driverId]);
     await client.query("UPDATE orders SET status='accepted',dispatch_mode='mandatory',forced=true,assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),updated_at=now() WHERE id=$1",[order.id,driverId]);
     await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1",[driverId,order.id]);
+    await orderEvent(client,order.id,req.userId,driverId,'forced',{forced:true});
+    await driverEvent(client,driverId,'order.forced',{orderId:order.id});
     await audit(client,req.userId,'dispatch.order.force','order',order.id,{driverId});
   });
   realtime.broadcastOperators('refresh',{reason:'order.forced',orderId:req.params.id}); realtime.broadcastDrivers('refresh',{reason:'order.forced',orderId:req.params.id});
@@ -507,6 +579,77 @@ app.post('/api/v1/dispatch/alerts/:id/close', ...dispatchGuard, asyncRoute(async
   });
   realtime.broadcastOperators('refresh',{reason:'sos.close'}); realtime.broadcastDrivers('refresh',{reason:'sos.close'});
   ok(res,'Alarm SOS zamknięty.');
+}));
+
+
+// ---------------- FULL RT3000: CRM / FIRMY / VOUCHERY / ROZLICZENIA / RAPORTY ----------------
+app.post('/api/v1/dispatch/clients', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const name=String(req.body?.name||'').trim(); const phone=String(req.body?.phone||'').trim();
+  if(!name && !phone) throw statusError(400,'Podaj nazwę lub telefon klienta.');
+  const row=(await pool.query(`INSERT INTO clients(name,phone,email,notes,blocked) VALUES($1,$2,$3,$4,$5) RETURNING id`,
+    [name,phone,String(req.body?.email||'').trim(),String(req.body?.notes||'').trim(),!!req.body?.blocked])).rows[0];
+  realtime.broadcastOperators('refresh',{reason:'client.created'}); ok(res,'Klient zapisany.',{clientId:String(row.id)});
+}));
+
+app.post('/api/v1/dispatch/clients/:id', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const r=await pool.query(`UPDATE clients SET name=$2,phone=$3,email=$4,notes=$5,blocked=$6,updated_at=now() WHERE id=$1 RETURNING id`,
+    [req.params.id,String(req.body?.name||''),String(req.body?.phone||''),String(req.body?.email||''),String(req.body?.notes||''),!!req.body?.blocked]);
+  if(!r.rows[0]) throw statusError(404,'Nie znaleziono klienta.'); realtime.broadcastOperators('refresh',{reason:'client.updated'}); ok(res,'Klient zaktualizowany.');
+}));
+
+app.post('/api/v1/dispatch/companies', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const name=String(req.body?.name||'').trim(); if(!name) throw statusError(400,'Podaj nazwę firmy.');
+  const row=(await pool.query(`INSERT INTO companies(name,nip,billing_email,phone,active,monthly_limit,notes) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [name,String(req.body?.nip||'').trim(),String(req.body?.billingEmail||'').trim(),String(req.body?.phone||'').trim(),req.body?.active!==false,finite(req.body?.monthlyLimit),String(req.body?.notes||'')])).rows[0];
+  realtime.broadcastOperators('refresh',{reason:'company.created'}); ok(res,'Firma zapisana.',{companyId:String(row.id)});
+}));
+
+app.post('/api/v1/dispatch/companies/:id', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const r=await pool.query(`UPDATE companies SET name=$2,nip=$3,billing_email=$4,phone=$5,active=$6,monthly_limit=$7,notes=$8,updated_at=now() WHERE id=$1 RETURNING id`,
+    [req.params.id,String(req.body?.name||''),String(req.body?.nip||''),String(req.body?.billingEmail||''),String(req.body?.phone||''),req.body?.active!==false,finite(req.body?.monthlyLimit),String(req.body?.notes||'')]);
+  if(!r.rows[0]) throw statusError(404,'Nie znaleziono firmy.'); realtime.broadcastOperators('refresh',{reason:'company.updated'}); ok(res,'Firma zaktualizowana.');
+}));
+
+app.post('/api/v1/dispatch/vouchers', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const code=String(req.body?.code||'').trim().toUpperCase(); const amount=finite(req.body?.amount);
+  if(!/^[A-Z0-9_-]{3,32}$/.test(code)) throw statusError(400,'Kod vouchera: 3–32 znaki A-Z/0-9.');
+  if(amount<=0) throw statusError(400,'Kwota vouchera musi być większa od zera.');
+  const validUntil=req.body?.validUntil?new Date(req.body.validUntil):null; if(validUntil&&Number.isNaN(validUntil.getTime())) throw statusError(400,'Nieprawidłowy termin vouchera.');
+  await pool.query(`INSERT INTO vouchers(code,company_id,client_id,amount,remaining_amount,active,valid_until,created_by) VALUES($1,$2,$3,$4,$4,true,$5,$6)
+                    ON CONFLICT(code) DO UPDATE SET company_id=EXCLUDED.company_id,client_id=EXCLUDED.client_id,amount=EXCLUDED.amount,remaining_amount=EXCLUDED.remaining_amount,active=true,valid_until=EXCLUDED.valid_until`,
+    [code,nullable(req.body?.companyId),nullable(req.body?.clientId),amount,validUntil,req.userId]);
+  realtime.broadcastOperators('refresh',{reason:'voucher.saved'}); ok(res,'Voucher zapisany.',{code});
+}));
+
+app.post('/api/v1/dispatch/vouchers/:code/enabled', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const r=await pool.query('UPDATE vouchers SET active=$2 WHERE code=$1 RETURNING code',[String(req.params.code||'').toUpperCase(),!!req.body?.enabled]);
+  if(!r.rows[0]) throw statusError(404,'Nie znaleziono vouchera.'); realtime.broadcastOperators('refresh',{reason:'voucher.enabled'}); ok(res,'Voucher zaktualizowany.');
+}));
+
+app.post('/api/v1/dispatch/drivers/:id/queue-priority', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const score=Math.max(-999,Math.min(999,Number(req.body?.priority||0)));
+  const r=await pool.query('UPDATE queue_entries SET priority_score=$2 WHERE driver_id=$1 RETURNING region_id',[req.params.id,score]);
+  if(!r.rows[0]) throw statusError(409,'Kierowca nie jest obecnie w kolejce.');
+  await pool.query('UPDATE drivers SET priority_points=$2,updated_at=now() WHERE id=$1',[req.params.id,score]);
+  realtime.broadcastOperators('refresh',{reason:'queue.priority'}); realtime.broadcastDrivers('refresh',{reason:'queue.priority'}); ok(res,`Priorytet kolejki: ${score}.`);
+}));
+
+app.post('/api/v1/dispatch/settlements/:id/close', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const r=await pool.query("UPDATE settlements SET status='settled',settled_at=now() WHERE id=$1 AND status<>'settled' RETURNING id",[req.params.id]);
+  if(!r.rows[0]) throw statusError(409,'Rozliczenie jest już zamknięte lub nie istnieje.');
+  realtime.broadcastOperators('refresh',{reason:'settlement.closed'}); ok(res,'Rozliczenie zamknięte.');
+}));
+
+app.get('/api/v1/dispatch/reports/daily', ...dispatchGuard, asyncRoute(async (req,res) => {
+  const day=String(req.query?.day||'').trim();
+  const date=day?new Date(day+'T00:00:00Z'):new Date(); if(Number.isNaN(date.getTime())) throw statusError(400,'Nieprawidłowa data.');
+  const start=new Date(Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate())); const end=new Date(start.getTime()+86400000);
+  const [totals,drivers,payments]=await Promise.all([
+    pool.query(`SELECT count(*)::int rides,COALESCE(sum(gross_amount),0) gross FROM settlements WHERE created_at>=$1 AND created_at<$2`,[start,end]),
+    pool.query(`SELECT d.taxi_id,d.number,d.name,count(s.id)::int rides,COALESCE(sum(s.gross_amount),0) gross FROM drivers d LEFT JOIN settlements s ON s.driver_id=d.id AND s.created_at>=$1 AND s.created_at<$2 GROUP BY d.id ORDER BY d.number`,[start,end]),
+    pool.query(`SELECT payment_method,count(*)::int rides,COALESCE(sum(gross_amount),0) gross FROM settlements WHERE created_at>=$1 AND created_at<$2 GROUP BY payment_method ORDER BY payment_method`,[start,end])
+  ]);
+  res.json({day:start.toISOString().slice(0,10),totals:{rides:totals.rows[0]?.rides||0,gross:Number(totals.rows[0]?.gross||0)},drivers:drivers.rows.map(x=>({...x,gross:Number(x.gross||0)})),payments:payments.rows.map(x=>({...x,gross:Number(x.gross||0)}))});
 }));
 
 // ---------------- ADMIN ----------------
@@ -614,12 +757,13 @@ app.post('/api/v1/admin/regions/:id', ...adminGuard, asyncRoute(async (req, res)
   const id = cleanCode(req.params.id, 'Region');
   const polygon = Array.isArray(req.body?.polygon) ? req.body.polygon : [];
   await tx(async client => {
+    const numericCode=String(req.body?.numericCode || id.replace(/\D/g,'')).trim();
     await client.query(`
-      INSERT INTO regions(id,name,short_name,active,queue_enabled,priority,polygon)
-      VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)
-      ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,short_name=EXCLUDED.short_name,active=EXCLUDED.active,
+      INSERT INTO regions(id,numeric_code,name,short_name,active,queue_enabled,priority,polygon)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)
+      ON CONFLICT(id) DO UPDATE SET numeric_code=EXCLUDED.numeric_code,name=EXCLUDED.name,short_name=EXCLUDED.short_name,active=EXCLUDED.active,
         queue_enabled=EXCLUDED.queue_enabled,priority=EXCLUDED.priority,polygon=EXCLUDED.polygon
-    `, [id,String(req.body?.name || id),String(req.body?.shortName || id),req.body?.active !== false,req.body?.queueEnabled !== false,Number(req.body?.priority || 0),JSON.stringify(polygon)]);
+    `, [id,numericCode,String(req.body?.name || id),String(req.body?.shortName || id),req.body?.active !== false,req.body?.queueEnabled !== false,Number(req.body?.priority || 0),JSON.stringify(polygon)]);
     await audit(client, req.userId, 'admin.region.save', 'region', id);
   });
   ok(res, `Region ${id} zapisany.`);
@@ -662,9 +806,43 @@ async function restoreDriver(client, driverId) {
   await client.query("UPDATE drivers SET status=CASE WHEN on_shift THEN $2 ELSE 'offline' END,updated_at=now() WHERE id=$1", [driverId,q ? 'in_queue' : 'available']);
 }
 
+
+async function driverEvent(client, driverId, eventType, payload = {}) {
+  await client.query('INSERT INTO driver_events(driver_id,event_type,payload) VALUES($1,$2,$3::jsonb)', [driverId,eventType,JSON.stringify(payload||{})]);
+}
+async function orderEvent(client, orderId, userId, driverId, eventType, payload = {}) {
+  await client.query('INSERT INTO order_events(order_id,actor_user_id,actor_driver_id,event_type,payload) VALUES($1,$2,$3,$4,$5::jsonb)', [orderId,userId||null,driverId||null,eventType,JSON.stringify(payload||{})]);
+}
+async function createSettlement(client, order, driverId) {
+  if(!order) return;
+  const gross=Math.max(0,Number(order.final_price||order.estimated_price||0));
+  let voucherAmount=0;
+  if(order.voucher_code){
+    const v=(await client.query(`SELECT * FROM vouchers WHERE code=$1 AND active=true FOR UPDATE`,[order.voucher_code])).rows[0];
+    if(v){
+      voucherAmount=Math.min(gross,Math.max(0,Number(v.remaining_amount||0)));
+      const left=Math.max(0,Number(v.remaining_amount||0)-voucherAmount);
+      await client.query(`UPDATE vouchers SET remaining_amount=$2,active=($2>0),used_at=CASE WHEN $2<=0 THEN now() ELSE used_at END WHERE code=$1`,[v.code,left]);
+    }
+  }
+  const companyAmount=order.company_id?Math.max(0,gross-voucherAmount):0;
+  const driverAmount=gross;
+  await client.query(`INSERT INTO settlements(order_id,driver_id,company_id,client_id,payment_method,gross_amount,driver_amount,company_amount,voucher_amount,status)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'open') ON CONFLICT(order_id) DO UPDATE SET payment_method=EXCLUDED.payment_method,gross_amount=EXCLUDED.gross_amount,driver_amount=EXCLUDED.driver_amount,company_amount=EXCLUDED.company_amount,voucher_amount=EXCLUDED.voucher_amount`,
+    [order.id,driverId,order.company_id,order.client_id,order.payment_method,gross,driverAmount,companyAmount,voucherAmount]);
+  if(order.client_id) await client.query('UPDATE clients SET rides_count=rides_count+1,total_spend=total_spend+$2,updated_at=now() WHERE id=$1',[order.client_id,gross]);
+  const shiftCompanyTotal=(order.company_id || !['cash','card'].includes(String(order.payment_method||''))) ? gross : 0;
+  await client.query(`UPDATE shift_sessions SET rides_count=rides_count+1,
+    cash_total=cash_total+CASE WHEN $2='cash' THEN $3 ELSE 0 END,
+    card_total=card_total+CASE WHEN $2='card' THEN $3 ELSE 0 END,
+    company_total=company_total+$4
+    WHERE id=(SELECT id FROM shift_sessions WHERE driver_id=$1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1)`,[driverId,order.payment_method,gross,shiftCompanyTotal]);
+  await client.query("UPDATE orders SET settlement_status='open' WHERE id=$1",[order.id]);
+}
+
 const port = Math.max(1, Number(process.env.PORT || 8081));
 const host = process.env.HOST || '127.0.0.1';
-const server = app.listen(port, host, () => console.log(`[WolfTaxi] API 0.5.0 RT3000-core działa na http://${host}:${port}`));
+const server = app.listen(port, host, () => console.log(`[WolfTaxi] API 0.6.0 FULL RT3000 działa na http://${host}:${port}`));
 realtime.attachRealtime(server);
 
 const timer = setInterval(async () => {

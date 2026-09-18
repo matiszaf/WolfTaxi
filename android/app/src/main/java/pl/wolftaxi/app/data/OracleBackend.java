@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import pl.wolftaxi.app.domain.DriverStatus;
 import pl.wolftaxi.app.domain.OrderStatus;
+import pl.wolftaxi.app.domain.PaymentMethod;
 import pl.wolftaxi.app.domain.model.DriverSnapshot;
 
 public final class OracleBackend implements Backend {
@@ -137,6 +138,12 @@ public final class OracleBackend implements Backend {
 
     @Override public void advanceOrder(String orderId, OrderStatus nextStatus, ActionCallback callback) {
         action("/api/v1/orders/" + orderId + "/advance", body("nextStatus", nextStatus.wire), callback);
+    }
+
+    @Override public void completeOrder(String orderId, double finalPrice, PaymentMethod paymentMethod, ActionCallback callback) {
+        JSONObject payload = body("nextStatus", OrderStatus.COMPLETED.wire);
+        try { payload.put("finalPrice", finalPrice); payload.put("paymentMethod", paymentMethod == null ? "cash" : paymentMethod.wire); } catch (Exception ignored) {}
+        action("/api/v1/orders/" + orderId + "/advance", payload, callback);
     }
 
     @Override public void claimExchange(String orderId, ActionCallback callback) {
