@@ -54,12 +54,14 @@ import pl.wolftaxi.app.domain.operator.OperatorSnapshot;
 import pl.wolftaxi.app.domain.operator.UserAccount;
 import pl.wolftaxi.app.domain.operator.SafetyAlertItem;
 import pl.wolftaxi.app.service.DriverLocationService;
+import pl.wolftaxi.app.service.SmsGatewayService;
 import pl.wolftaxi.app.ui.Ui;
 
 public final class MainActivity extends Activity implements BackendListener, OperatorListener {
-    private enum AppMode { DRIVER, DISPATCHER, ADMIN }
+    private enum AppMode { DRIVER, DISPATCHER, ADMIN, SMS_GATEWAY }
     private enum DriverTab { REGIONS, ORDER, EXCHANGE, CENTRAL, MENU }
     private static final int REQUEST_LOCATION = 140;
+    private static final int REQUEST_SMS = 141;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pl", "PL"));
     private final SimpleDateFormat clock = new SimpleDateFormat("HH:mm", Locale.getDefault());
@@ -103,6 +105,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         if (mode == AppMode.DRIVER && backend.isSignedIn()) backend.start();
         else if (mode == AppMode.DISPATCHER) operatorBackend.start(false);
         else if (mode == AppMode.ADMIN) operatorBackend.start(true);
+        else if (mode == AppMode.SMS_GATEWAY) renderSmsGatewayDashboard();
     }
 
     @Override public void onPause() { super.onPause(); stopCountdown(); }
@@ -129,7 +132,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         scroll.addView(content); setContentView(scroll); root = null;
         Ui.text(this, content, "WOLFTAXI", 15, Ui.GREEN, true);
         Ui.text(this, content, "Jeden system", 31, Ui.TEXT, true);
-        Ui.text(this, content, "Kierowca · Dyspozytor · Administrator", 14, Ui.MUTED, false);
+        Ui.text(this, content, "Kierowca · Dyspozytor · Administrator · Bramka SMS", 14, Ui.MUTED, false);
         LinearLayout card = Ui.card(this, content);
         EditText email = field("E-mail", false); EditText password = field("Hasło", true);
         card.addView(email); card.addView(password); toastLine = Ui.text(this, card, "", 13, Ui.MUTED, false);
@@ -149,10 +152,11 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         else if (backend.hasRole("driver")) switchMode(AppMode.DRIVER);
         else if (backend.hasRole("dispatcher")) switchMode(AppMode.DISPATCHER);
         else if (backend.hasRole("admin")) switchMode(AppMode.ADMIN);
+        else if (backend.hasRole("sms_gateway")) switchMode(AppMode.SMS_GATEWAY);
         else { showMessage("Konto nie ma aktywnej roli.", false); loginScreen(); }
     }
 
-    private int roleCount(){int n=0;if(backend.hasRole("driver"))n++;if(backend.hasRole("dispatcher"))n++;if(backend.hasRole("admin"))n++;return n;}
+    private int roleCount(){int n=0;if(backend.hasRole("driver"))n++;if(backend.hasRole("dispatcher"))n++;if(backend.hasRole("admin"))n++;if(backend.hasRole("sms_gateway"))n++;return n;}
 
     private void showModeChooser() {
         backend.stop(); operatorBackend.stop(); stopCountdown();
@@ -162,15 +166,19 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         if(backend.hasRole("driver")) Ui.button(this,content,"KIEROWCA",Ui.GREEN,v->switchMode(AppMode.DRIVER));
         if(backend.hasRole("dispatcher")) Ui.button(this,content,"DYSPOZYTOR",Ui.BLUE,v->switchMode(AppMode.DISPATCHER));
         if(backend.hasRole("admin")) Ui.button(this,content,"ADMINISTRATOR",Ui.ORANGE,v->switchMode(AppMode.ADMIN));
+        if(backend.hasRole("sms_gateway")) Ui.button(this,content,"BRAMKA SMS",Ui.MAGENTA,v->switchMode(AppMode.SMS_GATEWAY));
         Ui.button(this,content,"WYLOGUJ",Color.rgb(93,112,118),v->logout());
     }
 
     private void switchMode(AppMode next) {
+        AppMode previous=mode;
         mode=next; stopCountdown(); backend.stop(); operatorBackend.stop();
         if(next!=AppMode.DRIVER) stopLocationService();
+        if(previous==AppMode.SMS_GATEWAY && next!=AppMode.SMS_GATEWAY) stopSmsGateway();
         dashboardShell();
         if(next==AppMode.DRIVER){ snapshot=null; renderDriverDashboard(); backend.start(); }
-        else { operatorSnapshot=null; renderOperatorDashboard(); operatorBackend.start(next==AppMode.ADMIN); }
+        else if(next==AppMode.DISPATCHER || next==AppMode.ADMIN){ operatorSnapshot=null; renderOperatorDashboard(); operatorBackend.start(next==AppMode.ADMIN); }
+        else { renderSmsGatewayDashboard(); ensureSmsGateway(true); }
     }
 
     private EditText field(String hint, boolean password) {
@@ -634,7 +642,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private void statCard(LinearLayout row,String label,String value,int color){LinearLayout c=compactCard(row);Ui.text(this,c,label,10,Ui.MUTED,true);Ui.text(this,c,value,25,color,true);}
     private void renderOperatorActions(){LinearLayout row=Ui.row(this);root.addView(row);Ui.rowButton(this,row,"NOWE ZLECENIE",Ui.GREEN,v->newOrderDialog());Ui.rowButton(this,row,"KOMUNIKAT",Ui.BLUE,v->messageDialog());if(mode==AppMode.ADMIN)Ui.rowButton(this,row,"ADMIN",Ui.ORANGE,v->adminMenu());}
     private void renderOperatorDrivers(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"TAXI",13,Ui.MUTED,true);if(operatorSnapshot.drivers.isEmpty()){Ui.text(this,card,"Brak kierowców.",13,Ui.MUTED,false);return;}for(OperatorDriver d:operatorSnapshot.drivers){LinearLayout row=Ui.row(this);card.addView(row);LinearLayout left=Ui.column(this);row.addView(left,new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f));Ui.text(this,left,safe(d.taxiId)+" · "+safe(d.name),15,Ui.TEXT,true);String meta=(d.online?"online":"offline")+" · "+d.status+" · "+(d.queueRegionId.isEmpty()?safe(d.currentRegionId):d.queueRegionId)+(d.queuePosition>0?" "+d.queuePosition+"/"+d.queueSize:"");if(!safe(d.targetRegionId).isEmpty())meta+=" → "+d.targetRegionId;Ui.text(this,left,meta,12,d.online?Ui.GREEN:Ui.MUTED,false);TextView t=Ui.text(this,row,safe(d.currentTariffId),12,Ui.MUTED,true);t.setGravity(Gravity.END);}}
-    private void renderOperatorOrders(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"ZLECENIA",13,Ui.MUTED,true);int shown=0;for(Order o:operatorSnapshot.orders){if(shown++>=12)break;LinearLayout block=Ui.column(this);block.setPadding(0,Ui.dp(this,5),0,Ui.dp(this,8));card.addView(block);Ui.text(this,block,o.id+" · "+o.status.label.toUpperCase(Locale.ROOT),13,orderColor(o.status),true);Ui.text(this,block,safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress),15,Ui.TEXT,true);Ui.text(this,block,"Region: "+safe(o.pickupRegionId)+" · "+(o.estimatedPrice>0?money.format(o.estimatedPrice):"bez wyceny"),12,Ui.MUTED,false);if(o.status!=OrderStatus.COMPLETED&&o.status!=OrderStatus.CANCELLED){LinearLayout buttons=Ui.row(this);block.addView(buttons);Ui.rowButton(this,buttons,"PRZYPISZ",Ui.BLUE,v->assignOrderDialog(o));Ui.rowButton(this,buttons,"NAKAZ",Ui.MAGENTA,v->forceOrderDialog(o));Ui.rowButton(this,buttons,"ANULUJ",Ui.RED,v->confirm("Anulować "+o.id+"?",()->operatorAction(cb->operatorBackend.cancelOrder(o.id,cb))));}}if(shown==0)Ui.text(this,card,"Brak zleceń.",13,Ui.MUTED,false);}
+    private void renderOperatorOrders(){LinearLayout card=Ui.card(this,root);Ui.text(this,card,"ZLECENIA",13,Ui.MUTED,true);int shown=0;for(Order o:operatorSnapshot.orders){if(shown++>=12)break;LinearLayout block=Ui.column(this);block.setPadding(0,Ui.dp(this,5),0,Ui.dp(this,8));card.addView(block);Ui.text(this,block,o.id+" · "+o.status.label.toUpperCase(Locale.ROOT),13,orderColor(o.status),true);Ui.text(this,block,safe(o.pickupAddress)+(safe(o.destinationAddress).isEmpty()?"":" → "+o.destinationAddress),15,Ui.TEXT,true);Ui.text(this,block,"Region: "+safe(o.pickupRegionId)+" · "+(o.estimatedPrice>0?money.format(o.estimatedPrice):"bez wyceny"),12,Ui.MUTED,false);if(!safe(o.passengerPhone).isEmpty())Ui.text(this,block,"SMS tracking: "+safe(o.trackingSmsStatus)+(safe(o.trackingSmsLastError).isEmpty()?"":" · "+safe(o.trackingSmsLastError)),11,"sent".equals(o.trackingSmsStatus)?Ui.GREEN:("failed".equals(o.trackingSmsStatus)?Ui.RED:Ui.ORANGE),false);if(o.status!=OrderStatus.COMPLETED&&o.status!=OrderStatus.CANCELLED){LinearLayout buttons=Ui.row(this);block.addView(buttons);Ui.rowButton(this,buttons,"PRZYPISZ",Ui.BLUE,v->assignOrderDialog(o));Ui.rowButton(this,buttons,"NAKAZ",Ui.MAGENTA,v->forceOrderDialog(o));Ui.rowButton(this,buttons,"ANULUJ",Ui.RED,v->confirm("Anulować "+o.id+"?",()->operatorAction(cb->operatorBackend.cancelOrder(o.id,cb))));}}if(shown==0)Ui.text(this,card,"Brak zleceń.",13,Ui.MUTED,false);}
     private void renderOperatorMessages(){
         LinearLayout card=Ui.card(this,root);Ui.text(this,card,"KOMUNIKATY",13,Ui.MUTED,true);
         for(int i=0;i<Math.min(operatorSnapshot.messages.size(),8);i++){
@@ -659,10 +667,10 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private int orderColor(OrderStatus s){if(s==OrderStatus.NO_DRIVER||s==OrderStatus.CANCELLED)return Ui.RED;if(s==OrderStatus.OFFERED||s==OrderStatus.SEARCHING_DRIVER)return Ui.ORANGE;if(s.isActive())return Ui.BLUE;return Ui.MUTED;}
 
     private void newOrderDialog(){if(operatorSnapshot==null)return;
-        ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);EditText pickup=plainField("Adres podstawienia");EditText destination=plainField("Adres docelowy");box.addView(pickup);box.addView(destination);
+        ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);EditText pickup=plainField("Adres podstawienia");EditText destination=plainField("Adres docelowy");EditText passengerName=plainField("Klient");EditText passengerPhone=plainField("Telefon klienta, np. 500600700");passengerPhone.setInputType(InputType.TYPE_CLASS_PHONE);box.addView(pickup);box.addView(destination);box.addView(passengerName);box.addView(passengerPhone);
         Spinner regions=spinner(labelsRegions());Spinner tariffs=spinner(labelsTariffs());Spinner mode=spinner(new String[]{"Automat / kolejka","Giełda"});box.addView(regions);box.addView(tariffs);box.addView(mode);
         EditText passengers=numberField("Liczba pasażerów");passengers.setText("1");CheckBox luggage=new CheckBox(this),pet=new CheckBox(this),english=new CheckBox(this),mine=new CheckBox(this);luggage.setText("Bagaż");pet.setText("Zwierzę");english.setText("Wymagany angielski");mine.setText("Oznacz jako ryzykowne / mina");for(CheckBox c:new CheckBox[]{luggage,pet,english,mine}){c.setTextColor(Ui.TEXT);box.addView(c);}box.addView(passengers);
-        new AlertDialog.Builder(this).setTitle("Nowe zlecenie").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{String region=regions.getSelectedItemPosition()<=0?"":operatorSnapshot.regions.get(regions.getSelectedItemPosition()-1).id;String tariff=tariffs.getSelectedItemPosition()<=0?"":operatorSnapshot.tariffs.get(tariffs.getSelectedItemPosition()-1).id;int pc=1;try{pc=Integer.parseInt(passengers.getText().toString());}catch(Exception ignored){}final int count=Math.max(1,pc);String dm=mode.getSelectedItemPosition()==1?"exchange":"queue";operatorAction(cb->operatorBackend.createOrderAdvanced(pickup.getText().toString(),destination.getText().toString(),region,tariff,dm,count,luggage.isChecked(),pet.isChecked(),english.isChecked(),mine.isChecked(),0,cb));}).show();}
+        new AlertDialog.Builder(this).setTitle("Nowe zlecenie").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{String region=regions.getSelectedItemPosition()<=0?"":operatorSnapshot.regions.get(regions.getSelectedItemPosition()-1).id;String tariff=tariffs.getSelectedItemPosition()<=0?"":operatorSnapshot.tariffs.get(tariffs.getSelectedItemPosition()-1).id;int pc=1;try{pc=Integer.parseInt(passengers.getText().toString());}catch(Exception ignored){}final int count=Math.max(1,pc);String dm=mode.getSelectedItemPosition()==1?"exchange":"queue";operatorAction(cb->operatorBackend.createOrderAdvanced(pickup.getText().toString(),destination.getText().toString(),region,tariff,dm,count,luggage.isChecked(),pet.isChecked(),english.isChecked(),mine.isChecked(),0,passengerName.getText().toString(),passengerPhone.getText().toString(),cb));}).show();}
     private String[] labelsRegions(){ArrayList<String>x=new ArrayList<>();x.add("Region: automatycznie / brak");for(Region r:operatorSnapshot.regions)x.add((r.shortName.isEmpty()?r.id:r.shortName)+" · "+r.name);return x.toArray(new String[0]);}
     private String[] labelsTariffs(){ArrayList<String>x=new ArrayList<>();x.add("Taryfa: domyślna");for(Tariff t:operatorSnapshot.tariffs)x.add(t.shortName+" · "+t.name);return x.toArray(new String[0]);}
     private Spinner spinner(String[] values){Spinner s=new Spinner(this);ArrayAdapter<String>a=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,values);s.setAdapter(a);return s;}
@@ -687,14 +695,14 @@ public final class MainActivity extends Activity implements BackendListener, Ope
         }).show();
     }
     private void adminMenu(){new AlertDialog.Builder(this).setTitle("Administracja").setItems(new String[]{"Nowe konto","Nowa / zmień taryfę","Nowy / zmień region","Nowa / zmień strefę"},(d,w)->{if(w==0)createUserDialog();else if(w==1)tariffDialog();else if(w==2)regionDialog();else zoneDialog();}).show();}
-    private void createUserDialog(){ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);EditText email=field("E-mail",false),name=plainField("Nazwa"),password=field("Hasło",true),taxi=plainField("ID taxi, np. TX2"),number=numberField("Numer taxi");CheckBox driver=new CheckBox(this),dispatcher=new CheckBox(this),admin=new CheckBox(this);driver.setText("Kierowca");dispatcher.setText("Dyspozytor");admin.setText("Administrator");driver.setTextColor(Ui.TEXT);dispatcher.setTextColor(Ui.TEXT);admin.setTextColor(Ui.TEXT);box.addView(email);box.addView(name);box.addView(password);box.addView(driver);box.addView(dispatcher);box.addView(admin);box.addView(taxi);box.addView(number);new AlertDialog.Builder(this).setTitle("Nowe konto").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{int n=0;try{n=Integer.parseInt(number.getText().toString().trim());}catch(Exception ignored){}final int taxiNumber=n;operatorAction(cb->operatorBackend.createUser(email.getText().toString(),name.getText().toString(),password.getText().toString(),driver.isChecked(),dispatcher.isChecked(),admin.isChecked(),taxi.getText().toString(),taxiNumber,cb));}).show();}
+    private void createUserDialog(){ScrollView scroll=new ScrollView(this);LinearLayout box=dialogColumn();scroll.addView(box);EditText email=field("E-mail",false),name=plainField("Nazwa"),password=field("Hasło",true),taxi=plainField("ID taxi, np. TX2"),number=numberField("Numer taxi");CheckBox driver=new CheckBox(this),dispatcher=new CheckBox(this),admin=new CheckBox(this),smsGateway=new CheckBox(this);driver.setText("Kierowca");dispatcher.setText("Dyspozytor");admin.setText("Administrator");smsGateway.setText("Bramka SMS");driver.setTextColor(Ui.TEXT);dispatcher.setTextColor(Ui.TEXT);admin.setTextColor(Ui.TEXT);smsGateway.setTextColor(Ui.TEXT);box.addView(email);box.addView(name);box.addView(password);box.addView(driver);box.addView(dispatcher);box.addView(admin);box.addView(smsGateway);box.addView(taxi);box.addView(number);new AlertDialog.Builder(this).setTitle("Nowe konto").setView(scroll).setNegativeButton("Wróć",null).setPositiveButton("UTWÓRZ",(d,w)->{int n=0;try{n=Integer.parseInt(number.getText().toString().trim());}catch(Exception ignored){}final int taxiNumber=n;operatorAction(cb->operatorBackend.createUser(email.getText().toString(),name.getText().toString(),password.getText().toString(),driver.isChecked(),dispatcher.isChecked(),admin.isChecked(),smsGateway.isChecked(),taxi.getText().toString(),taxiNumber,cb));}).show();}
     private void tariffDialog(){LinearLayout box=dialogColumn();EditText id=plainField("ID, np. T3"),name=plainField("Nazwa"),start=numberField("Opłata startowa"),km=numberField("Cena / km");box.addView(id);box.addView(name);box.addView(start);box.addView(km);new AlertDialog.Builder(this).setTitle("Taryfa").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.saveTariff(id.getText().toString().trim().toUpperCase(),name.getText().toString(),parseDouble(start),parseDouble(km),cb))).show();}
     private void regionDialog(){LinearLayout box=dialogColumn();EditText id=plainField("ID, np. R2"),name=plainField("Nazwa"),priority=numberField("Priorytet");box.addView(id);box.addView(name);box.addView(priority);new AlertDialog.Builder(this).setTitle("Region").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.saveRegion(id.getText().toString().trim().toUpperCase(),name.getText().toString(),(int)parseDouble(priority),cb))).show();}
     private void zoneDialog(){LinearLayout box=dialogColumn();EditText id=plainField("ID, np. S2"),name=plainField("Nazwa"),tariff=plainField("Domyślna taryfa, np. T2");box.addView(id);box.addView(name);box.addView(tariff);new AlertDialog.Builder(this).setTitle("Strefa taryfowa").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAPISZ",(d,w)->operatorAction(cb->operatorBackend.saveZone(id.getText().toString().trim().toUpperCase(),name.getText().toString(),tariff.getText().toString().trim().toUpperCase(),cb))).show();}
     private double parseDouble(EditText input){try{return Double.parseDouble(input.getText().toString().replace(',','.').trim());}catch(Exception e){return 0;}}
 
     private void renderSessionActions(){if(roleCount()>1)Ui.button(this,root,"ZMIEŃ TRYB",Color.rgb(93,112,118),v->showModeChooser());Ui.button(this,root,"WYLOGUJ",Color.rgb(93,112,118),v->confirm("Wylogować?",this::logout));}
-    private void logout(){backend.signOut((ok,message)->runOnUiThread(()->{operatorBackend.stop();stopLocationService();loginScreen();}));}
+    private void logout(){backend.signOut((ok,message)->runOnUiThread(()->{operatorBackend.stop();stopLocationService();stopSmsGateway();loginScreen();}));}
 
     private void announceDriverSnapshot(DriverSnapshot value){
         if(!ttsReady||value==null||value.driver==null||!value.driver.ttsEnabled)return;
@@ -718,9 +726,49 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private void confirm(String message,Runnable yes){new AlertDialog.Builder(this).setMessage(message).setNegativeButton("Wróć",null).setPositiveButton("Potwierdź",(d,w)->yes.run()).show();}
     private void startCountdown(String orderId,long expiresAt){stopCountdown();countdownTick=new Runnable(){@Override public void run(){if(countdown==null)return;long ms=Math.max(0,expiresAt-System.currentTimeMillis());countdown.setText(ms>0?String.format(Locale.getDefault(),"%02d s",(ms+999)/1000):"WYGASŁO");if(ms>0)handler.postDelayed(this,250);else{countdownTick=null;backend.expireOrder(orderId,(ok,msg)->{});}}};handler.post(countdownTick);}
     private void stopCountdown(){if(countdownTick!=null)handler.removeCallbacks(countdownTick);countdownTick=null;countdown=null;}
+    private void renderSmsGatewayDashboard(){
+        if(mode!=AppMode.SMS_GATEWAY||root==null)return;
+        root.removeAllViews();
+        LinearLayout top=Ui.card(this,root);
+        Ui.header(this,top,"WOLFTAXI · BRAMKA SMS");
+        Ui.text(this,top,safe(backend.currentDisplayName()),14,Ui.TEXT,true);
+        boolean enabled=SmsGatewayService.isEnabled(this);
+        Ui.text(this,top,enabled?"● AKTYWNA":"○ WYŁĄCZONA",18,enabled?Ui.GREEN:Ui.RED,true);
+        Ui.text(this,top,"Telefon wysyła prywatne SMS-y z linkiem śledzenia przez własną kartę SIM.",11,Ui.MUTED,false);
+
+        LinearLayout state=Ui.card(this,root);
+        Ui.header(this,state,"STAN BRAMKI");
+        Ui.text(this,state,SmsGatewayService.lastStatus(this),14,Ui.TEXT,true);
+        String recipient=SmsGatewayService.lastRecipient(this); if(!recipient.isEmpty())Ui.text(this,state,"Ostatni numer: "+recipient,12,Ui.MUTED,false);
+        long at=SmsGatewayService.lastAt(this); if(at>0)Ui.text(this,state,"Aktualizacja: "+clock.format(new Date(at)),11,Ui.MUTED,false);
+        String error=SmsGatewayService.lastError(this); if(!error.isEmpty())Ui.text(this,state,error,11,Ui.RED,false);
+
+        if(enabled) Ui.button(this,root,"WYŁĄCZ BRAMKĘ",Ui.RED,v->{stopSmsGateway();renderSmsGatewayDashboard();});
+        else Ui.button(this,root,"WŁĄCZ BRAMKĘ",Ui.GREEN,v->ensureSmsGateway(true));
+        Ui.button(this,root,"ODŚWIEŻ",Ui.BLUE,v->renderSmsGatewayDashboard());
+        if(roleCount()>1)Ui.button(this,root,"ZMIEŃ TRYB",Color.rgb(93,112,118),v->showModeChooser());
+        Ui.button(this,root,"WYLOGUJ",Color.rgb(93,112,118),v->logout());
+    }
+
+    private void ensureSmsGateway(boolean ask){
+        if(mode!=AppMode.SMS_GATEWAY||!backend.hasRole("sms_gateway"))return;
+        boolean sms=checkSelfPermission(Manifest.permission.SEND_SMS)==PackageManager.PERMISSION_GRANTED;
+        if(!sms){
+            if(ask){
+                if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.SEND_SMS,Manifest.permission.POST_NOTIFICATIONS},REQUEST_SMS);
+                else requestPermissions(new String[]{Manifest.permission.SEND_SMS},REQUEST_SMS);
+            }
+            return;
+        }
+        Intent service=new Intent(this,SmsGatewayService.class);
+        if(Build.VERSION.SDK_INT>=26)startForegroundService(service);else startService(service);
+        handler.postDelayed(this::renderSmsGatewayDashboard,500);
+    }
+    private void stopSmsGateway(){stopService(new Intent(this,SmsGatewayService.class));}
+
     private void ensureLocationService(boolean ask){if(mode!=AppMode.DRIVER||"DEMO".equals(snapshot==null?"":snapshot.backendMode))return;boolean fine=checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED,coarse=checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED;if(!fine&&!coarse){if(ask){if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.POST_NOTIFICATIONS},REQUEST_LOCATION);else requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION},REQUEST_LOCATION);}return;}Intent service=new Intent(this,DriverLocationService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(service);else startService(service);}
     private void stopLocationService(){stopService(new Intent(this,DriverLocationService.class));}
-    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQUEST_LOCATION)ensureLocationService(false);}
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQUEST_LOCATION)ensureLocationService(false);else if(requestCode==REQUEST_SMS){ensureSmsGateway(false);renderSmsGatewayDashboard();}}
     private void openNavigation(String address){if(safe(address).isEmpty()){showMessage("Brak adresu do nawigacji.",false);return;}Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse("geo:0,0?q="+Uri.encode(address)));try{startActivity(intent);}catch(Exception e){showMessage("Nie znaleziono aplikacji nawigacyjnej.",false);}}
     private void openDialer(String phone){Intent intent=new Intent(Intent.ACTION_DIAL,Uri.parse("tel:"+Uri.encode(phone)));try{startActivity(intent);}catch(Exception e){showMessage("Nie można otworzyć telefonu.",false);}}
     private void openTrackingMap(String url){if(safe(url).isEmpty()){showMessage("Brak linku śledzenia.",false);return;}Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));try{startActivity(intent);}catch(Exception e){showMessage("Nie można otworzyć mapy kursu.",false);}}

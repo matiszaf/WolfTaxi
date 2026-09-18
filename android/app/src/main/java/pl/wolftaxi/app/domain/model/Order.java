@@ -39,6 +39,9 @@ public class Order {
     public double meterWaitingSeconds = 0;
     public double meterAmount = 0;
     public long meterUpdatedAt = 0;
+    public String trackingSmsStatus = "none";
+    public long trackingSmsSentAt = 0;
+    public String trackingSmsLastError = "";
     public long scheduledFor = 0;
     public double estimatedPrice = 0;
     public double finalPrice = 0;

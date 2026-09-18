@@ -354,3 +354,27 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_waiting_seconds double precisi
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_amount numeric(10,2) NOT NULL DEFAULT 0;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS meter_updated_at timestamptz;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_tracking_token ON orders(tracking_token) WHERE tracking_token IS NOT NULL AND tracking_token<>'';
+
+
+-- WolfTaxi 0.8 / prywatna bramka SMS -----------------------------------------
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_sms_status text NOT NULL DEFAULT 'none';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_sms_sent_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_sms_last_error text NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS sms_outbox (
+  id bigserial PRIMARY KEY,
+  order_id text REFERENCES orders(id) ON DELETE CASCADE,
+  kind text NOT NULL DEFAULT 'tracking',
+  recipient text NOT NULL,
+  body text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  attempts integer NOT NULL DEFAULT 0,
+  gateway_user_id uuid REFERENCES users(id),
+  lease_until timestamptz,
+  last_error text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  sent_at timestamptz,
+  UNIQUE(order_id, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_sms_outbox_pending ON sms_outbox(status,lease_until,created_at);

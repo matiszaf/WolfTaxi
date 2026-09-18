@@ -28,12 +28,13 @@ app.use(express.json({ limit: '256kb' }));
 
 const loginLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 25, standardHeaders: true, legacyHeaders: false });
 const adminLimiter = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const trackingLimiter = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const ok = (res, message, extra = {}) => res.json({ ok: true, message, ...extra });
 
 app.get('/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.7.0', time: new Date().toISOString() });
+  res.json({ ok: true, service: 'WolfTaxi Oracle API', version: '0.8.0', time: new Date().toISOString() });
 }));
 
 // Panel WWW. Publiczny Apache może mapować /dispatch/ bezpośrednio tutaj.
@@ -45,7 +46,7 @@ app.get('/track/:token', (_req, res) => {
   res.sendFile(path.join(trackingPublic, 'index.html'));
 });
 
-app.get('/api/v1/public/track/:token', asyncRoute(async (req, res) => {
+app.get('/api/v1/public/track/:token', trackingLimiter, asyncRoute(async (req, res) => {
   const token = String(req.params.token || '').trim();
   if (!/^[A-Za-z0-9_-]{24,128}$/.test(token)) throw statusError(404, 'Link śledzenia jest nieprawidłowy.');
   const row = (await pool.query(`
@@ -101,6 +102,69 @@ app.get('/api/v1/auth/me', requireAuth, asyncRoute(async (req, res) => {
   res.json({ id:String(user.id), email:user.email, name:user.display_name || '', roles:normalizeRoles(user.roles), enabled:!!user.enabled });
 }));
 app.post('/api/v1/auth/logout', requireAuth, (_req, res) => ok(res, 'Wylogowano'));
+
+
+// ---------------- SMS GATEWAY (private APK role) ----------------
+const smsGatewayGuard = [requireAuth, requireRole('sms_gateway')];
+
+app.get('/api/v1/sms-gateway/status', ...smsGatewayGuard, asyncRoute(async (req,res) => {
+  const counts=(await pool.query(`SELECT
+    count(*) FILTER (WHERE status='queued')::int queued,
+    count(*) FILTER (WHERE status='sending')::int sending,
+    count(*) FILTER (WHERE status='sent' AND sent_at>now()-interval '24 hours')::int sent24h,
+    count(*) FILTER (WHERE status='failed' AND updated_at>now()-interval '24 hours')::int failed24h
+    FROM sms_outbox`)).rows[0] || {};
+  const recent=(await pool.query(`SELECT id,order_id,kind,recipient,status,attempts,last_error,created_at,sent_at
+    FROM sms_outbox ORDER BY created_at DESC LIMIT 20`)).rows;
+  res.json({
+    ok:true,
+    queued:Number(counts.queued||0), sending:Number(counts.sending||0), sent24h:Number(counts.sent24h||0), failed24h:Number(counts.failed24h||0),
+    recent:recent.map(x=>({id:String(x.id),orderId:String(x.order_id||''),kind:String(x.kind||''),recipient:String(x.recipient||''),status:String(x.status||''),attempts:Number(x.attempts||0),lastError:String(x.last_error||''),createdAt:x.created_at?new Date(x.created_at).getTime():0,sentAt:x.sent_at?new Date(x.sent_at).getTime():0}))
+  });
+}));
+
+app.post('/api/v1/sms-gateway/next', ...smsGatewayGuard, asyncRoute(async (req,res) => {
+  let item=null;
+  await tx(async client => {
+    const row=(await client.query(`
+      SELECT * FROM sms_outbox
+      WHERE (
+        status='queued' OR
+        (status='sending' AND (lease_until IS NULL OR lease_until<now())) OR
+        (status='failed' AND attempts<3 AND updated_at<now()-interval '30 seconds')
+      )
+      ORDER BY created_at ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    `)).rows[0];
+    if(!row) return;
+    const claimed=(await client.query(`UPDATE sms_outbox
+      SET status='sending',attempts=attempts+1,gateway_user_id=$2,lease_until=now()+interval '90 seconds',updated_at=now()
+      WHERE id=$1 RETURNING *`,[row.id,req.userId])).rows[0];
+    item={id:String(claimed.id),orderId:String(claimed.order_id||''),kind:String(claimed.kind||''),recipient:String(claimed.recipient||''),body:String(claimed.body||''),attempts:Number(claimed.attempts||0)};
+  });
+  res.json({ok:true,item});
+}));
+
+app.post('/api/v1/sms-gateway/:id/report', ...smsGatewayGuard, asyncRoute(async (req,res) => {
+  const success=!!req.body?.success;
+  const error=String(req.body?.error||'').slice(0,500);
+  await tx(async client => {
+    const row=(await client.query('SELECT * FROM sms_outbox WHERE id=$1 FOR UPDATE',[req.params.id])).rows[0];
+    if(!row) throw statusError(404,'Nie znaleziono wiadomości SMS.');
+    if(success){
+      await client.query(`UPDATE sms_outbox SET status='sent',sent_at=COALESCE(sent_at,now()),lease_until=NULL,last_error='',updated_at=now() WHERE id=$1`,[row.id]);
+      if(row.kind==='tracking' && row.order_id) await client.query(`UPDATE orders SET tracking_sms_status='sent',tracking_sms_sent_at=COALESCE(tracking_sms_sent_at,now()),tracking_sms_last_error='',updated_at=now() WHERE id=$1`,[row.order_id]);
+    } else {
+      const permanent=Number(row.attempts||0)>=3;
+      await client.query(`UPDATE sms_outbox SET status=$2,lease_until=NULL,last_error=$3,updated_at=now() WHERE id=$1`,[row.id,permanent?'failed':'queued',error||'Błąd wysyłki SMS']);
+      if(row.kind==='tracking' && row.order_id) await client.query(`UPDATE orders SET tracking_sms_status=$2,tracking_sms_last_error=$3,updated_at=now() WHERE id=$1`,[row.order_id,permanent?'failed':'queued',error||'Błąd wysyłki SMS']);
+    }
+    await audit(client,req.userId,success?'sms.sent':'sms.failed','sms_outbox',String(row.id),{orderId:row.order_id,kind:row.kind,error});
+  });
+  realtime.broadcastOperators('refresh',{reason:'sms.report'});
+  ok(res,success?'SMS oznaczony jako wysłany.':'Błąd SMS zapisany.');
+}));
 
 // ---------------- DRIVER ----------------
 const driverGuard = [requireAuth, requireDriver];
@@ -224,7 +288,7 @@ app.post('/api/v1/driver/location', ...driverGuard, asyncRoute(async (req, res) 
   const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw statusError(400, 'Nieprawidłowa lokalizacja.');
   const speed = finite(req.body?.speed), heading = finite(req.body?.heading), accuracy = finite(req.body?.accuracy);
-  let offer = null;
+  let offer = null, meter = null;
   await tx(async client => {
     const detectedRegion = await detectArea(client, 'regions', lat, lng);
     const fareZone = await detectArea(client, 'fare_zones', lat, lng);
@@ -233,11 +297,11 @@ app.post('/api/v1/driver/location', ...driverGuard, asyncRoute(async (req, res) 
         last_location_at=now(), online=true, detected_region_id=$7, current_fare_zone_id=$8, updated_at=now()
       WHERE id=$1
     `, [req.driverId, lat, lng, speed, heading, accuracy, detectedRegion, fareZone]);
-    await updateMeterForLocation(client, req.driverId, lat, lng, speed, accuracy);
+    meter = await updateMeterForLocation(client, req.driverId, lat, lng, speed, accuracy);
     offer = (await client.query("SELECT id,pickup_address FROM orders WHERE offered_driver_id=$1 AND status='offered' AND offer_expires_at>now() ORDER BY offer_expires_at DESC LIMIT 1", [req.driverId])).rows[0] || null;
   });
-  realtime.broadcastOperators('driver.location', { driverId:req.driverId, lat, lng, speed, heading, accuracy, at:Date.now() });
-  realtime.broadcastUser(req.userId, 'refresh', { reason:'driver.location' });
+  realtime.broadcastOperators('driver.location', { driverId:req.driverId, lat, lng, speed, heading, accuracy, at:Date.now(), ...(meter||{}) });
+  if (meter) realtime.broadcastUser(req.userId, 'refresh', { reason:'meter.location' });
   res.json({ ok: true, offerId: offer?.id || '', pickupAddress: offer?.pickup_address || '' });
 }));
 
@@ -255,6 +319,7 @@ app.post('/api/v1/orders/:id/accept', ...driverGuard, asyncRoute(async (req, res
     await ensureTrackingToken(client, order.id);
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [req.driverId]);
     await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),tracking_enabled=true,tracking_expires_at=NULL,updated_at=now() WHERE id=$1", [order.id, req.driverId]);
+    await queueTrackingSms(client, order.id);
     await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1", [req.driverId, order.id]);
     await driverEvent(client, req.driverId, 'order.accept', { orderId:order.id });
     await orderEvent(client, order.id, req.userId, req.driverId, 'accepted', {});
@@ -455,6 +520,7 @@ app.post('/api/v1/dispatch/orders/:id/assign', ...dispatchGuard, asyncRoute(asyn
     await ensureTrackingToken(client, order.id);
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1', [driverId]);
     await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),tracking_enabled=true,tracking_expires_at=NULL,updated_at=now() WHERE id=$1", [order.id, driverId]);
+    await queueTrackingSms(client, order.id);
     await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1", [driverId, order.id]);
     await orderEvent(client,order.id,req.userId,driverId,'assigned',{forced:false});
     await audit(client, req.userId, 'dispatch.order.assign', 'order', order.id, { driverId });
@@ -518,7 +584,9 @@ app.post('/api/v1/driver/exchange/:id/claim', ...driverGuard, asyncRoute(async (
     const order=(await client.query("SELECT * FROM orders WHERE id=$1 AND status='exchange' AND dispatch_mode='exchange' FOR UPDATE",[req.params.id])).rows[0];
     if(!order) throw statusError(409,'Zlecenie nie jest już dostępne na giełdzie.');
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1',[req.driverId]);
-    await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,accepted_at=now(),updated_at=now() WHERE id=$1",[order.id,req.driverId]);
+    await ensureTrackingToken(client, order.id);
+    await client.query("UPDATE orders SET status='accepted',assigned_driver_id=$2,accepted_at=now(),tracking_enabled=true,tracking_expires_at=NULL,updated_at=now() WHERE id=$1",[order.id,req.driverId]);
+    await queueTrackingSms(client, order.id);
     await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1",[req.driverId,order.id]);
     await audit(client,req.userId,'exchange.claim','order',order.id,{driverId:req.driverId});
   });
@@ -593,6 +661,7 @@ app.post('/api/v1/dispatch/orders/:id/force', ...dispatchGuard, asyncRoute(async
     await ensureTrackingToken(client, order.id);
     await client.query('DELETE FROM queue_entries WHERE driver_id=$1',[driverId]);
     await client.query("UPDATE orders SET status='accepted',dispatch_mode='mandatory',forced=true,assigned_driver_id=$2,offered_driver_id=NULL,offer_expires_at=NULL,accepted_at=now(),tracking_enabled=true,tracking_expires_at=NULL,updated_at=now() WHERE id=$1",[order.id,driverId]);
+    await queueTrackingSms(client, order.id);
     await client.query("UPDATE drivers SET active_order_id=$2,status='driving_to_pickup',target_region_id=NULL,updated_at=now() WHERE id=$1",[driverId,order.id]);
     await orderEvent(client,order.id,req.userId,driverId,'forced',{forced:true});
     await driverEvent(client,driverId,'order.forced',{orderId:order.id});
@@ -898,6 +967,35 @@ async function createSettlement(client, order, driverId) {
 }
 
 
+
+function normalizeSmsRecipient(value) {
+  let raw=String(value||'').trim().replace(/[\s().-]/g,'');
+  if(raw.startsWith('00')) raw='+'+raw.slice(2);
+  if(/^\d{9}$/.test(raw)) raw='+48'+raw;
+  if(!/^\+\d{8,15}$/.test(raw)) return '';
+  return raw;
+}
+
+async function queueTrackingSms(client, orderId) {
+  const row=(await client.query(`SELECT id,passenger_name,passenger_phone,tracking_token,tracking_sms_status,status FROM orders WHERE id=$1 FOR UPDATE`,[orderId])).rows[0];
+  if(!row) return {queued:false,reason:'missing_order'};
+  const recipient=normalizeSmsRecipient(row.passenger_phone);
+  if(!recipient){
+    await client.query(`UPDATE orders SET tracking_sms_status='skipped',tracking_sms_last_error='Brak poprawnego numeru telefonu klienta',updated_at=now() WHERE id=$1`,[orderId]);
+    return {queued:false,reason:'invalid_phone'};
+  }
+  const token=row.tracking_token || await ensureTrackingToken(client,orderId);
+  const link=trackingUrl(token);
+  const first=String(row.passenger_name||'').trim().split(/\s+/)[0];
+  const prefix=first?`WolfTaxi: ${first}, Twoja taksówka jest w drodze.`:'WolfTaxi: Twoja taksówka jest w drodze.';
+  const body=`${prefix} Śledź kurs na żywo: ${link}`;
+  await client.query(`INSERT INTO sms_outbox(order_id,kind,recipient,body,status)
+    VALUES($1,'tracking',$2,$3,'queued')
+    ON CONFLICT(order_id,kind) DO NOTHING`,[orderId,recipient,body]);
+  await client.query(`UPDATE orders SET tracking_sms_status=CASE WHEN tracking_sms_status='sent' THEN 'sent' ELSE 'queued' END,tracking_sms_last_error='',updated_at=now() WHERE id=$1`,[orderId]);
+  return {queued:true,recipient};
+}
+
 function trackingUrl(token) {
   return `${String(process.env.PUBLIC_BASE_URL || 'https://wolftaxi.starcore.pl').replace(/\/$/,'')}/track/${encodeURIComponent(String(token||''))}`;
 }
@@ -923,7 +1021,7 @@ function haversineMeters(lat1,lng1,lat2,lng2){
 async function startMeter(client, orderId, driverId){
   const x=(await client.query(`SELECT o.id,o.tariff_id,d.last_lat,d.last_lng,t.start_fee,t.minimum_fare,
     COALESCE(z.multiplier,1) multiplier FROM orders o JOIN drivers d ON d.id=$2
-    LEFT JOIN tariffs t ON t.id=o.tariff_id LEFT JOIN fare_zones z ON z.id=d.current_fare_zone_id WHERE o.id=$1 FOR UPDATE OF o`,[orderId,driverId])).rows[0];
+    LEFT JOIN tariffs t ON t.id=COALESCE(o.tariff_id,d.current_tariff_id) LEFT JOIN fare_zones z ON z.id=d.current_fare_zone_id WHERE o.id=$1 FOR UPDATE OF o`,[orderId,driverId])).rows[0];
   if(!x) return;
   await ensureTrackingToken(client,orderId);
   const multiplier=Math.max(0.01,Number(x.multiplier||1));
@@ -936,9 +1034,9 @@ async function updateMeterForLocation(client,driverId,lat,lng,speed,accuracy){
   const x=(await client.query(`SELECT o.id,o.meter_last_at,o.meter_last_lat,o.meter_last_lng,o.meter_distance_m,o.meter_waiting_seconds,
       t.start_fee,t.price_per_km,t.waiting_price_per_hour,t.minimum_fare,COALESCE(z.multiplier,1) multiplier
     FROM orders o JOIN drivers d ON d.id=o.assigned_driver_id
-    LEFT JOIN tariffs t ON t.id=o.tariff_id LEFT JOIN fare_zones z ON z.id=d.current_fare_zone_id
+    LEFT JOIN tariffs t ON t.id=COALESCE(o.tariff_id,d.current_tariff_id) LEFT JOIN fare_zones z ON z.id=d.current_fare_zone_id
     WHERE o.assigned_driver_id=$1 AND o.status='in_progress' AND o.meter_active=true ORDER BY o.updated_at DESC LIMIT 1 FOR UPDATE OF o`,[driverId])).rows[0];
-  if(!x) return;
+  if(!x) return null;
   const now=Date.now(),prevAt=x.meter_last_at?new Date(x.meter_last_at).getTime():now;
   const dt=Math.max(0,Math.min(30,(now-prevAt)/1000));
   let distance=Math.max(0,Number(x.meter_distance_m||0)),waiting=Math.max(0,Number(x.meter_waiting_seconds||0));
@@ -954,6 +1052,7 @@ async function updateMeterForLocation(client,driverId,lat,lng,speed,accuracy){
   const amount=Math.max(Number(x.minimum_fare||0),base)*multiplier;
   await client.query(`UPDATE orders SET meter_last_at=now(),meter_last_lat=$2,meter_last_lng=$3,meter_distance_m=$4,
     meter_waiting_seconds=$5,meter_amount=$6,meter_updated_at=now() WHERE id=$1`,[x.id,lat,lng,distance,waiting,amount]);
+  return { orderId:String(x.id), meterAmount:amount, meterDistanceM:distance, meterWaitingSeconds:waiting, meterUpdatedAt:Date.now() };
 }
 
 const port = Math.max(1, Number(process.env.PORT || 8081));

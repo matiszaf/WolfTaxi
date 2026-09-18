@@ -1,73 +1,38 @@
-# WolfTaxi 0.7 TAXIMETER + LIVE TRACKING
+# WolfTaxi 0.8 — prywatna bramka SMS w tej samej aplikacji
 
-Duży release integracyjny WolfTaxi. Łączy terminal kierowcy, centralę WWW, dyspozytornię w aplikacji, kolejki, priorytety, zlecenia, giełdę, nakazy, komunikację, SOS, CRM i rozliczenia na jednym backendzie Oracle/PostgreSQL.
+WolfTaxi 0.8 rozwija 0.7 (taksometr + mapa LIVE + publiczny link śledzenia) o darmową bramkę SMS działającą z prywatnego APK na Androidzie.
 
 ## Najważniejsze
 
-- ekran **REJONY** terminala kierowcy został zachowany bez przebudowy układu;
-- stały podpis release APK pozostaje obsługiwany przez GitHub Secrets;
-- kody rejonów są teraz jawnie przechowywane w bazie (`numeric_code`);
-- seed ustawia: 21 Witomino, 23 Karwiny, 24 Wiczlino, 26 Dąbrowa, 37 Centrum, 39 Chylonia, 87 Trójmiasto, 89 Dom, 1 Region 1;
-- kolejki i pozycje są liczone na żywo, z priorytetem kierowcy/kolejki;
-- automatyczny przydział filtruje wymagania: karta, zwierzę, bagaż, angielski;
-- zlecenia: automat/kolejka, giełda, nakaz, planowane, wymagania, ryzyko/mina;
-- pełny przebieg kursu: oferta → przyjęcie → dojazd → na miejscu → kursem → zakończenie;
-- przy zakończeniu kierowca podaje kwotę końcową i formę płatności;
-- wiadomości, potwierdzenia odczytu, pytania TAK/NIE, TTS;
-- SOS z lokalizacją i obsługą przez centralę;
-- mapa floty na żywo w panelu WWW;
-- klienci/CRM, firmy, vouchery, bezgotówka i centra kosztów;
-- automatyczne rozliczenie zakończonego kursu;
-- dzienne sumy kierowcy i centrali;
-- raport dzienny API i historia/audyt;
-- taryfy, strefy, regiony i konta administracyjne;
-- WebSocket + awaryjny polling.
+- jedna aplikacja i jeden podpis APK,
+- nowa rola `sms_gateway`,
+- osobny tryb **BRAMKA SMS** po zalogowaniu — bez dodawania zakładki do terminala kierowcy,
+- ekran `REJONY` kierowcy pozostaje bez zmian,
+- Android wysyła SMS przez kartę SIM telefonu (`SEND_SMS`),
+- backend ma kolejkę `sms_outbox`, leasing zadania i maks. 3 próby,
+- po przyjęciu/przypisaniu/nakazie/pobraniu z giełdy zlecenia system automatycznie kolejkuje SMS z linkiem śledzenia, jeśli zlecenie ma poprawny numer klienta,
+- polski 9-cyfrowy numer jest normalizowany do `+48...`,
+- centrala widzi `queued / sent / failed / skipped` przy zleceniu,
+- lokalny znacznik w telefonie ogranicza ryzyko duplikatu po zerwaniu sieci między wysłaniem SMS a raportem do Oracle.
 
-## Aktualizacja Oracle
+## Urządzenie-bramka
 
-Rozpakuj `WolfTaxi_0.7_SERVER_ONLY.zip` i uruchom:
+Najlepiej użyć jednego telefonu Android z kartą SIM i pakietem SMS. Konto powinno mieć rolę `sms_gateway`. Po zalogowaniu wybierz **BRAMKA SMS**, nadaj aplikacji zgodę na SMS i zostaw bramkę włączoną. Działa jako foreground service z trwałym powiadomieniem.
 
-```bash
-chmod +x UPDATE_ORACLE_UBUNTU.sh scripts/*.sh
-./UPDATE_ORACLE_UBUNTU.sh
-```
+W telefonie z dwiema kartami SIM używana jest domyślna karta SMS ustawiona w Androidzie.
 
-Po aktualizacji:
+## Automatyczna wiadomość
 
-```bash
-curl https://wolftaxi.starcore.pl/health
-```
+Po przypisaniu kursu system wysyła tekst w stylu:
 
-Powinno zwrócić `"version":"0.7.0"`.
+`WolfTaxi: Twoja taksówka jest w drodze. Śledź kurs na żywo: https://wolftaxi.starcore.pl/track/...`
 
-## APK
+Jeśli podano imię klienta, jest ono używane w wiadomości.
 
-Workflow `.github/workflows/android.yml` buduje podpisany `assembleRelease`, sprawdza SHA-256 certyfikatu i publikuje artifact `WolfTaxi-APK`.
+## Konto bramki
 
-Wymagane sekrety GitHub pozostają te same:
+Po wdrożeniu 0.8 zaloguj się jako administrator i utwórz konto z rolą **BRAMKA SMS**. Nie trzeba przypisywać mu profilu kierowcy ani numeru taxi.
 
-- `WOLFTAXI_KEYSTORE_B64`
-- `WOLFTAXI_KEYSTORE_PASSWORD`
-- `WOLFTAXI_KEY_ALIAS`
-- `WOLFTAXI_KEY_PASSWORD`
-- `WOLFTAXI_CERT_SHA256`
+## Bezpieczeństwo
 
-## Panel centrali
-
-`https://wolftaxi.starcore.pl/dispatch/`
-
-Zakładki obejmują dyspozytornię, zlecenia, kierowców, komunikację, klientów/firmy, rozliczenia, historię oraz administrację.
-
-> WolfTaxi odwzorowuje workflow, które zostały zdefiniowane dla tego projektu. Nie zakłada nieudokumentowanych zachowań zamkniętego systemu RT3000.
-
-## WolfTaxi 0.7 — taksometr, mapa LIVE i link klienta
-
-Wersja 0.7 dodaje trzy elementy kursu bez zmiany zamrożonego ekranu `REJONY`:
-
-- **Taksometr GPS** uruchamiany automatycznie przy rozpoczęciu kursu (`in_progress`). Kwota jest liczona na serwerze z opłaty startowej, kilometrów, czasu postoju i mnożnika strefy. Wartość jest widoczna w zakładce `ZLEC.` i podpowiadana przy zakończeniu kursu.
-- **Mapa LIVE** korzystająca z lokalizacji wysyłanej przez istniejący foreground service kierowcy. Centrala nadal widzi flotę na żywo, a kierowca przy aktywnym zleceniu ma przycisk `MAPA LIVE`.
-- **Publiczny link śledzenia kursu klienta** w postaci `https://wolftaxi.starcore.pl/track/<losowy-token>`. Token ma 192 bity losowości, nie wymaga logowania, nie ujawnia telefonu/nazwiska/uwag klienta i wygasa po kursie. W aplikacji jest `LINK KLIENTA`, a w panelu centrali przy zleceniu przycisk `LINK` kopiujący adres.
-
-Strona klienta pokazuje status kursu, numer taxi, adres podstawienia/cel, pozycję auta na OpenStreetMap, czas ostatniej aktualizacji oraz bieżący odczyt taksometru. Aktualizacja odbywa się co ok. 3 sekundy.
-
-> Taksometr WolfTaxi w tej wersji jest programowym licznikiem/estymatorem opartym o GPS i konfigurację taryf. Jeśli ma służyć jako prawnie wymagany taksometr do naliczania oficjalnej opłaty, trzeba osobno zweryfikować wymagania homologacyjne/fiskalne dla docelowego zastosowania.
+Endpointy kolejki SMS wymagają zalogowanego JWT z rolą `sms_gateway`. Telefon nie przyjmuje dowolnej treści z internetu — pobiera tylko wiadomości przygotowane przez backend WolfTaxi.

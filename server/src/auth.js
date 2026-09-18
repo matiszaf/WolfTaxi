@@ -3,7 +3,7 @@ const { pool } = require('./db');
 
 function normalizeRoles(value) {
   if (!Array.isArray(value)) return [];
-  const allowed = new Set(['driver', 'dispatcher', 'admin']);
+  const allowed = new Set(['driver', 'dispatcher', 'admin', 'sms_gateway']);
   return [...new Set(value.map(v => String(v || '').trim().toLowerCase()).filter(v => allowed.has(v)))];
 }
 

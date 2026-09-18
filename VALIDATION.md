@@ -1,14 +1,13 @@
-# Walidacja WolfTaxi 0.7
+# Walidacja 0.8
 
-Wykonane przed spakowaniem:
+Sprawdzone statycznie:
 
-- `node --check` dla głównych plików backendu i panelu WWW;
-- kontrola wersji API 0.7.0;
-- kontrola migracji pól `tracking_*` i `meter_*`;
-- kontrola generowania tokenów śledzenia;
-- kontrola automatycznego wygasania linku po zakończeniu/anulowaniu;
-- kontrola mapowania pól taksometru do Android `Order`;
-- kontrola zachowania workflow podpisu APK i versionCode 0.7;
-- test integralności obu archiwów ZIP.
+- `node --check` dla backendu i panelu WWW,
+- rola `sms_gateway` jest akceptowana przez JWT i admina,
+- schema migracyjna używa `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`,
+- przyjęcie zlecenia w czterech ścieżkach uruchamia `queueTrackingSms`,
+- prywatny gateway wymaga roli `sms_gateway`,
+- numer odbiorcy jest walidowany przed umieszczeniem w kolejce,
+- podpis release pozostaje obsługiwany przez dotychczasowy workflow GitHub Actions.
 
-Finalna kompilacja APK odbywa się w GitHub Actions z Android SDK 35.
+Finalny compile Androida wykonuje GitHub Actions z Android SDK 35.

@@ -43,12 +43,12 @@ public final class OperatorBackend {
     public void stop() { running = false; main.removeCallbacks(poll); realtime.stop(); }
 
     public void createOrder(String pickup, String destination, String regionId, String tariffId, ActionCallback cb) {
-        createOrderAdvanced(pickup,destination,regionId,tariffId,"queue",1,false,false,false,false,0,cb);
+        createOrderAdvanced(pickup,destination,regionId,tariffId,"queue",1,false,false,false,false,0,"","",cb);
     }
-    public void createOrderAdvanced(String pickup,String destination,String regionId,String tariffId,String dispatchMode,int passengers,boolean luggage,boolean pet,boolean englishRequired,boolean mineWarning,long scheduledFor,ActionCallback cb) {
+    public void createOrderAdvanced(String pickup,String destination,String regionId,String tariffId,String dispatchMode,int passengers,boolean luggage,boolean pet,boolean englishRequired,boolean mineWarning,long scheduledFor,String passengerName,String passengerPhone,ActionCallback cb) {
         JSONObject body = new JSONObject();
         put(body,"pickupAddress",pickup); put(body,"destinationAddress",destination); put(body,"pickupRegionId",regionId); put(body,"tariffId",tariffId);
-        put(body,"dispatchMode",dispatchMode); put(body,"passengerCount",passengers); put(body,"luggage",luggage); put(body,"pet",pet); put(body,"englishRequired",englishRequired); put(body,"mineWarning",mineWarning); if(scheduledFor>0)put(body,"scheduledFor",new java.util.Date(scheduledFor).toInstant().toString());
+        put(body,"dispatchMode",dispatchMode); put(body,"passengerName",passengerName); put(body,"passengerPhone",passengerPhone); put(body,"passengerCount",passengers); put(body,"luggage",luggage); put(body,"pet",pet); put(body,"englishRequired",englishRequired); put(body,"mineWarning",mineWarning); if(scheduledFor>0)put(body,"scheduledFor",new java.util.Date(scheduledFor).toInstant().toString());
         action("/api/v1/dispatch/orders", body, cb);
     }
     public void assignOrder(String orderId, String driverId, ActionCallback cb) { action("/api/v1/dispatch/orders/"+orderId+"/assign", body("driverId",driverId), cb); }
@@ -63,9 +63,9 @@ public final class OperatorBackend {
     public void sendMessage(String title,String bodyText,String type,String targetType,String targetId,boolean requiresAck,boolean voiceRead,ActionCallback cb) {
         JSONObject body=new JSONObject();put(body,"title",title);put(body,"body",bodyText);put(body,"type",type);put(body,"targetType",targetType);put(body,"targetId",targetId);put(body,"requiresAck",requiresAck);put(body,"voiceRead",voiceRead);action("/api/v1/dispatch/messages",body,cb);
     }
-    public void createUser(String email,String name,String password,boolean driver,boolean dispatcher,boolean admin,String taxiId,int number,ActionCallback cb){
+    public void createUser(String email,String name,String password,boolean driver,boolean dispatcher,boolean admin,boolean smsGateway,String taxiId,int number,ActionCallback cb){
         JSONObject body=new JSONObject();put(body,"email",email);put(body,"name",name);put(body,"password",password);put(body,"taxiId",taxiId);put(body,"number",number);
-        JSONArray roles=new JSONArray();if(driver)roles.put("driver");if(dispatcher)roles.put("dispatcher");if(admin)roles.put("admin");put(body,"roles",roles);action("/api/v1/admin/users",body,cb);
+        JSONArray roles=new JSONArray();if(driver)roles.put("driver");if(dispatcher)roles.put("dispatcher");if(admin)roles.put("admin");if(smsGateway)roles.put("sms_gateway");put(body,"roles",roles);action("/api/v1/admin/users",body,cb);
     }
     public void setUserEnabled(String userId, boolean enabled, ActionCallback cb){JSONObject body=new JSONObject();put(body,"enabled",enabled);action("/api/v1/admin/users/"+userId+"/enabled",body,cb);}
     public void saveTariff(String id,String name,double startFee,double pricePerKm,ActionCallback cb){JSONObject body=new JSONObject();put(body,"name",name);put(body,"shortName",id);put(body,"startFee",startFee);put(body,"pricePerKm",pricePerKm);put(body,"active",true);action("/api/v1/admin/tariffs/"+id,body,cb);}

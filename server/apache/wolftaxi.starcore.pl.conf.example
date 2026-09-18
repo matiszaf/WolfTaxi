@@ -11,6 +11,9 @@
     ProxyPass        /dispatch/ http://127.0.0.1:8081/dispatch/
     ProxyPassReverse /dispatch/ http://127.0.0.1:8081/dispatch/
 
+    ProxyPass        /track/ http://127.0.0.1:8081/track/
+    ProxyPassReverse /track/ http://127.0.0.1:8081/track/
+
     ProxyPass        /health http://127.0.0.1:8081/health
     ProxyPassReverse /health http://127.0.0.1:8081/health
 
