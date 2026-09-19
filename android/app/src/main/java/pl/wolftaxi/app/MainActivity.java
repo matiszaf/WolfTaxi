@@ -482,7 +482,7 @@ public final class MainActivity extends Activity implements BackendListener, Ope
     private void nextOrderAction(Order order,OrderStatus next){if(next==OrderStatus.COMPLETED)completeOrderDialog(order);else action(cb->backend.advanceOrder(order.id,next,cb));}
 
     private void completeOrderDialog(Order order){
-        LinearLayout box=dialogColumn();EditText price=numberField("Kwota końcowa");double suggested=order.meterAmount>0?order.meterAmount:(order.estimatedPrice>0?order.estimatedPrice:order.finalPrice);price.setText(String.format(Locale.US,"%.0f",Math.round(suggested)));
+        LinearLayout box=dialogColumn();EditText price=numberField("Kwota końcowa");double suggested=order.meterAmount>0?order.meterAmount:(order.estimatedPrice>0?order.estimatedPrice:order.finalPrice);price.setText(String.valueOf(Math.round(suggested)));
         Spinner payment=spinner(new String[]{"Gotówka","Karta","Firma","Inna"});box.addView(price);box.addView(payment);
         new AlertDialog.Builder(this).setTitle("Zakończ kurs").setView(box).setNegativeButton("Wróć",null).setPositiveButton("ZAKOŃCZ",(d,w)->{
             double amount=parseDouble(price);PaymentMethod method=new PaymentMethod[]{PaymentMethod.CASH,PaymentMethod.CARD,PaymentMethod.COMPANY,PaymentMethod.OTHER}[payment.getSelectedItemPosition()];
